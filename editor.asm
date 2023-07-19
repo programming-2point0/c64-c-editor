@@ -83,6 +83,11 @@ getkey: jsr GETIN
 
         cmp #$0d
         beq key_return
+        cmp #$14
+        beq key_delete          // aka backspace
+        cmp #$94
+        beq key_insert
+
 
         // Debugging tools for displaying memory, erasing line and entering complete line
         cmp #$85
@@ -91,9 +96,18 @@ getkey: jsr GETIN
         beq key_f2
         cmp #$86
         beq key_f3
-//        cmp #$8a
-//        beq key_f4
-
+        /*
+        cmp #$8a
+        beq key_f4
+        cmp #$87
+        beq key_f5
+        cmp #$8b
+        beq key_f6
+        cmp #$88
+        beq key_f7
+        cmp #$8c
+        beq key_f8
+*/
         // todo: only if printable char
         jsr printchar
 nxtchar:jsr cursor_update
@@ -123,6 +137,16 @@ key_return:
         jsr edit_newline
         jsr cursor_calculate
         jsr mem_show
+        jmp nxtchar
+
+key_delete:
+        jsr edit_delete_char
+        jsr cursor_calculate
+        jsr mem_show
+        jmp nxtchar
+
+key_insert:
+
         jmp nxtchar
 
 key_f1:
@@ -476,6 +500,7 @@ edit_dupl_line: {
 
 edit_endofline: {
         // find the end of the current line - returns the position in A
+        sty $04         // save Y
         ldy #$26
 look_for_end:
         dey
@@ -486,7 +511,57 @@ look_for_end:
 end_found:
         iny
         tya
+        ldy $04         // restore Y
         rts        
+}
+
+edit_delete_char: {
+        // if at first xpos, join this and previous line
+        // else - move remaining characters (until last) one to the left
+        lda xpos
+        cmp #$01
+        beq edit_joinlines
+
+        // find last character
+        tay             // store xpos in y
+        dey             // offset in memory
+        jsr edit_endofline
+        sta $02
+
+        // if we are beyond the last character, skip shifting
+        cpy $02
+        bcs clr_last
+
+shift_left:        
+        lda (mem_line),y
+        dey
+        sta (mem_line),y
+        iny
+        iny
+        cpy $02
+        bne shift_left
+        
+clr_last:
+        // put a space over the last position
+        lda #$20
+        dey
+        sta (mem_line),y
+        dec xpos
+        rts
+}
+
+edit_joinlines: {
+        // find end of this line
+
+        // find previous line
+        // find end of previous line
+
+        // copy from beginning of this line to end of previous 
+
+        // if total is less than 26 (LINE_LENGTH) delete this line
+        // else, fill remaining with spaces
+
+        rts
 }
 
 backspace:
