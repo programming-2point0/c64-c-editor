@@ -31,16 +31,6 @@ Entry:  // blue background color
         sta $d020
         sta $d021
 
-        // clear screen
-        ldx #$00
-        lda #$20
-rst_scr:sta $0400,x
-        sta $0500,x
-        sta $0600,x
-        sta $06e7,x
-        inx
-        bne rst_scr
-
         // select font
         lda #$1c        // select at address 00ab c000 0000 0000 - by setting xxxx abcx = xxxx 1100 => $3000
         sta $d018       
@@ -55,8 +45,10 @@ rst_scr:sta $0400,x
         jsr border
 
         // initialize memory
+        jsr mem_init
 
         // show memory on screen
+        jsr mem_show
 
         // initialize cursor
         jsr cursor_init
@@ -90,6 +82,19 @@ wait:   jsr GETIN
         cmp #$1d
         beq key_crsr_right
 
+        cmp #$0d
+        beq key_return
+
+        // Debugging tools for displaying memory, erasing line and entering complete line
+        cmp #$85
+        beq key_f1
+        cmp #$89
+        beq key_f2
+        cmp #$86
+        beq key_f3
+//        cmp #$8a
+//        beq key_f4
+
         // todo: only if printable char
         jsr printchar
 nxtchar:jsr cursor_update
@@ -114,6 +119,38 @@ key_crsr_up:
 key_crsr_down:
         jsr cursor_down
         jmp nxtchar
+
+key_return:
+        jsr edit_newline
+        jsr cursor_calculate
+        jsr mem_show
+        jmp nxtchar
+
+key_f1:
+        jsr mem_show
+        jmp nxtchar
+key_f2:
+        // fill current line with letters and numbers
+        ldy #$00
+db_fl:  tya
+        sta (mem_line),y
+        iny
+        cpy #$26
+        bne db_fl
+        jsr mem_show
+        jmp nxtchar
+
+key_f3:
+        // clear current line
+        ldy #$00
+        lda #$20
+db_cl:  sta (mem_line),y
+        iny
+        cpy #$26
+        bne db_cl
+        jsr mem_show
+        jmp nxtchar
+
 
 // -------------------------------
 //  CURSOR handling
@@ -144,7 +181,7 @@ cursor_top:
         sta ypos
         jmp cursor_calculate
 
-cursor_left:
+cursor_left: {
         // move cursor to the left - if already at beginning of line, move to end of previous line
         dec xpos
         bne cursor_calculate // not at beginning, done
@@ -156,6 +193,7 @@ cursor_left:
         lda #$26        // TODO: Find lastcharacter, rather than just end-pos
 stay:   sta xpos
         jmp cursor_calculate
+}
 
 cursor_right:
         // move cursor to the right - if at the end of line, move to beginning of next line
@@ -214,7 +252,7 @@ cursor_calc_scr:
         sta scr_cursor+1
         rts
 
-cursor_calc_mem:
+cursor_calc_mem: {
         // calculate memory cursors
         // mem_cursor - the exact address of the current position
         // mem_line - the address of the current line (0 is the first character) 
@@ -248,7 +286,7 @@ thisline:
         adc #$00
         sta mem_cursor+1
         rts
-        
+}        
 show_cursor:
         // shows the actual cursor at the current cursor_position
         ldx xpos        
@@ -304,10 +342,10 @@ show_cursor_coords:
 
 printchar:
         // TODO: Move from print to special keys
-        cmp #$0d
-        beq makenewline
-        cmp #$14
-        beq backspace
+//        cmp #$0d
+//        beq makenewline
+//        cmp #$14
+//        beq backspace
         jsr convertchar
 
         // prints the character in A - on screen and in memory
@@ -321,19 +359,123 @@ printchar:
    
         rts
 
-makenewline:
-        jsr insertline
-        jsr breakline
-        jsr newline
+// ------------------
+//  EDITING 
+//    - all editing routines only edit memory, not screen!  
+// ------------------
+
+edit_newline:
+        // inserts a new-line below this one - breaks the current line at current xpos if needed
+        // - if cursor is at beginning, insert empty line before this
+        // - if cursor is at end, insert empty line after this
+        // - if cursor is in the middle, break line at cursor
+        // - if line was empty, insert another empty line
+        jsr edit_dupl_line      // duplicate current line no matter what
+        // check if at beginning of line
+        lda xpos
+        cmp #$01
+        bne not_at_beginning
+        // clear current line (empty line before)
+        ldy #$00
+        lda #$20
+!:      sta (mem_line),y
+        iny
+        cpy #$26
+        bne !-
+        // no change to cursor!
         rts
 
+not_at_beginning:
+        jsr edit_endofline      // find end of current (original) line
+        // if line was empty, an empty line was duplicated, move to that, and nothing else
+        beq newline_end
+        // if line ends before xpos
+        cmp xpos        
+        bpl newline_break       // xpos was before end of line
+        // xpos was efter end of line
+        // so clear the new line
+        ldy #$26
+        lda #$20
+!:      sta (mem_line),y
+        iny
+        cpy #$4c
+        bne !-
+        jmp newline_end      
 
-newline:
+newline_break:        
+        sec
+        sbc xpos                // x = x - xpos
+        tax
+        inx                     // and add another one, because we end at 0
+
+        // find next line
+        lda mem_line
+        clc
+        adc #$26
+        sta ptr_tmp
+        lda mem_line+1
+        adc #$00
+        sta ptr_tmp+1
+        // copy / move from current-pos to next_line
+        ldy #$00
+brk_loop:
+        lda (mem_cursor),y
+        sta (ptr_tmp),y
+        lda #$20                // "remove" (overwrite with space) after copy
+        sta (mem_cursor),y
+        iny
+        dex                     // copy only characters between xpos and end of line/last character
+        bne brk_loop
+
+        // clear remaining of next line
+!:      cpy #$26
+        beq newline_end
+        lda #$20
+        sta (ptr_tmp),y
+        iny
+        jmp !-
+newline_end:
+        inc ypos
         lda #$01
         sta xpos
-        inc ypos
-        // TODO: Handle scroll
-        rts
+        rts       
+
+edit_dupl_line:
+        // add a new line in memory after current line
+        // copy from current line until end of last line into next line
+
+        // TODO: Find end of last line, right now, just fake it as hardcoded
+        lda #$43
+        sta ptr2+1
+        lda #$69
+        sta ptr2
+
+        // current line and next line
+        lda mem_line
+        sta ptr1
+        clc
+        adc #$26        // line-length
+        sta ptr3
+        lda mem_line+1
+        sta ptr1+1
+        adc #$00
+        sta ptr3+1
+
+        jmp mem_copy
+
+edit_endofline:
+        // find the end of the current line - returns the position in A
+        ldy #$26
+look_for_end:
+        dey
+        beq end_found
+        lda (mem_line),y
+        cmp #$20
+        beq look_for_end
+end_found:
+        iny
+        tya
+        rts        
 
 
 backspace:
@@ -430,108 +572,6 @@ lsspace:dey
         sta ptr1+1
 emptylin:
         rts
-
-breakline:
-        ldx xpos
-        ldy ypos
-        jsr scrptr
-        // find last character on this line
-        ldy #$27
-space:  dey
-        cpy xpos
-        beq onlyspaces
-        lda (ptr1),y
-        cmp #$20
-        beq space
-        // y now contains the last xpos to have something in it
-        // subtract xpos from y
-        tya
-        sec
-        sbc xpos
-        // a is now the number of characters AFTER current xpos
-        pha
-        // make ptr2 the current character
-        lda ptr1
-        clc
-        adc xpos
-        sta ptr2
-        lda ptr1+1
-        adc #$00
-        sta ptr2+1
-
-        // find beginning of next line
-        ldx #$01
-        ldy ypos
-        iny
-        jsr scrptr
-
-        // copy from current-pos to last - to next line
-        pla
-        tay
-br_copy:        lda (ptr2),y
-        iny
-        sta (ptr1),y
-        dey
-        lda #$20
-        sta (ptr2),y
-        dey
-        bpl br_copy
-
-onlyspaces:
-        rts
-
-
-
-insertline:
-        // find last line - TODO: Find in memory, rather than on screen
-        ldy lines
-        dey
-        ldx #$01
-        jsr scrptr
-        lda ptr1
-        clc
-        adc #$28
-        sta ptr2
-        lda ptr1+1
-        adc #$00
-        sta ptr2+1
-        ldx lines
-
-inserts:        ldy #$01
-cp_line:lda (ptr1),y
-        sta (ptr2),y
-        iny
-        cpy #$27
-        bne cp_line
-        dex
-        cpx ypos
-        beq in_end
-
-        lda ptr1
-        sec
-        sbc #$28
-        sta ptr1
-        lda ptr1+1
-        sbc #$00
-        sta ptr1+1
-
-        lda ptr2
-        sec
-        sbc #$28
-        sta ptr2
-        lda ptr2+1
-        sbc #$00
-        sta ptr2+1
-
-        jmp inserts
-in_end: lda #$20
-        dey
-        sta (ptr2),y
-        cpy #$01
-        bne in_end
-        rts
-
-
 
 convertchar:
         cmp #$40
@@ -687,17 +727,6 @@ skip02: clc
         jsr st_print    // print ones
         rts
 
-
-clearline:
-        // clears the current line - overwrites with spaces
-        ldy #$01
-        lda #$20
-cl_loop:sta (cur_line),y
-        iny
-        cpy #$27
-        bne cl_loop
-        rts
-
 screen: .word $0400, $0428, $0450, $0478, $04A0, $04C8, $04F0 
         .word $0518, $0540, $0568, $0590, $05B8, $05E0
         .word $0608, $0630, $0658, $0680, $06A8, $06D0, $06F8
@@ -707,6 +736,65 @@ screen: .word $0400, $0428, $0450, $0478, $04A0, $04C8, $04F0
 // ------------------------
 //  MEMORY handling
 // ------------------------
+
+mem_init:
+        // fill memory from 4000 to 4400 with 20
+        lda #$40
+        sta ptr1+1
+        lda #$44
+        sta ptr2+1
+        lda #$00
+        sta ptr1
+        sta ptr2
+        lda #$20
+        jsr mem_fill
+        rts
+
+mem_show:
+        // prints the entire screen full from memory
+        // screen starts at 0429
+        lda #$04
+        sta ptr1+1
+        lda #$29
+        sta ptr1
+
+        // TODO: use offset and enable scroll
+        lda #$40
+        sta ptr2+1
+        lda #$00
+        sta ptr2
+
+        ldx #$17        // lines to copy
+pm_line:ldy #$00
+pm_chr: lda (ptr2),y
+        sta (ptr1),y
+        iny
+        cpy #$26
+        bne pm_chr
+
+        // add y to memory-ptr
+        tya
+        clc
+        adc ptr2
+        sta ptr2
+        lda ptr2+1
+        adc #$00
+        sta ptr2+1
+
+        // add two more to screen-ptr
+        iny
+        iny
+        tya
+        clc
+        adc ptr1
+        sta ptr1
+        lda ptr1+1
+        adc #$00
+        sta ptr1+1
+
+        dex
+        bne pm_line
+        rts
 
 mem_fill:
         // fills the memory from ptr1 to ptr2 with whatever is in A
@@ -780,27 +868,29 @@ mem_copy_fwd:
 mem_copy_bwd:        
         // copies the memory from ptr1 to ptr2 into ptr3 - starting with ptr2
         // calculate size to copy, and add to ptr3
-        lda ptr2+1
-        sec
-        sbc ptr1+1
-        clc
-        adc ptr3+1
-        sta ptr3+1
+        // ptr3 = ptr2 + ptr3 - ptr1 
+        // first calculate ptr3 = ptr2 + ptr3
         lda ptr2
-        sec
-        sbc ptr1
-        clc 
+        clc
         adc ptr3
         sta ptr3
+        lda ptr2+1
+        adc ptr3+1
+        sta ptr3+1
+        // anything in carry here? shouldn't be, unless we go over ffff, and we wouldn't
+
+        // then calculate ptr3 = ptr3 - ptr1 (make sure to check for borrowing!)
+        lda ptr3
+        sec
+        sbc ptr1
+        sta ptr3
         lda ptr3+1
-        adc #$00
+        sbc ptr1+1
         sta ptr3+1
 
         ldy #$00
-!loop:  lda (ptr2),y
-        sta (ptr3),y
-        
-        // increment ptr3
+        jmp mcpy
+!loop:  // increment ptr3
         lda ptr3
         sec
         sbc #$01
@@ -817,6 +907,9 @@ mem_copy_bwd:
         lda ptr2+1
         sbc #$00
         sta ptr2+1
+
+mcpy:   lda (ptr2),y
+        sta (ptr3),y
 
         // check if ptr2 has hit ptr1
         lda ptr2+1
