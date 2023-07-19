@@ -5,9 +5,10 @@ BasicUpstart2(Entry)
 
 *=$e0 virtual
 .zp {
-ptr1:   .word 0
-ptr2:   .word 0
-ptr3:   .word 0
+ptr1:           .word 0
+ptr2:           .word 0
+ptr3:           .word 0
+ptr_tmp:        .word 0
 st_cursor: .word 0
 scr_cursor:     .word 0
 scr_line:       .word 0
@@ -59,6 +60,7 @@ rst_scr:sta $0400,x
 
         // initialize cursor
         jsr cursor_init
+        jsr cursor_calculate
         jsr cursor_update
         
         lda #$17        // TODO: Make this number of lines somewhere else ...
@@ -696,25 +698,131 @@ cl_loop:sta (cur_line),y
         bne cl_loop
         rts
 
-setcurline:
-        // set current line - use ypos to calculate the address of the current line on screen
-        // store in cur_line
-        pha
-        tya
-        pha
-        lda ypos
-        asl
-        tay
-        lda screen,y
-        sta cur_line
-        lda screen+1,y
-        sta cur_line+1
-        pla
-        tay
-        pla
-        rts
-
 screen: .word $0400, $0428, $0450, $0478, $04A0, $04C8, $04F0 
         .word $0518, $0540, $0568, $0590, $05B8, $05E0
         .word $0608, $0630, $0658, $0680, $06A8, $06D0, $06F8
         .word $0720, $0748, $0770, $0798, $07C0
+
+        
+// ------------------------
+//  MEMORY handling
+// ------------------------
+
+mem_fill:
+        // fills the memory from ptr1 to ptr2 with whatever is in A
+        tax
+        lda #$00
+        sta ptr_tmp
+        lda ptr1+1
+        sta ptr_tmp+1
+        ldy ptr1
+fill_loop:        
+        txa
+        sta (ptr_tmp),y
+        iny
+        bne same_page
+        inc ptr_tmp+1
+same_page:
+        lda ptr_tmp+1
+        cmp ptr2+1      // if we haven't reached the end yet, keep going
+        bne fill_loop
+        //  if ptr_tmp+1 is at ptr2+1 - check if y is ptr2
+        cpy ptr2
+        bne fill_loop
+        rts
+
+mem_copy:
+        // copies the memory from ptr1 to ptr2 into ptr3
+        // if ptr3 (dest) is before/less than ptr1 (start of source) -> copy forwards
+        // if ptr3 (dest) is after ptr1 (start of source) -> copy backward
+        lda ptr3+1
+        cmp ptr1+1
+        beq check_lo
+        bpl mem_copy_bwd
+check_lo:
+        lda ptr3
+        cmp ptr1
+        bpl mem_copy_bwd
+        
+mem_copy_fwd:
+        // copies the memory from ptr1 to ptr2 into ptr3 - starting from ptr1 (destroys ptr1 and ptr3)
+        ldy #$00
+!loop:  lda (ptr1),y
+        sta (ptr3),y
+        
+        // increment ptr3
+        lda ptr3
+        clc
+        adc #$01
+        sta ptr3
+        lda ptr3+1
+        adc #$00
+        sta ptr3+1
+
+        // increment ptr1
+        lda ptr1
+        clc
+        adc #$01
+        sta ptr1
+        lda ptr1+1
+        adc #$00
+        sta ptr1+1
+
+        // check if ptr1 has hit ptr2
+        lda ptr1+1
+        cmp ptr2+1
+        bne !loop-
+        lda ptr1
+        cmp ptr2
+        bne !loop-
+        rts
+
+mem_copy_bwd:        
+        // copies the memory from ptr1 to ptr2 into ptr3 - starting with ptr2
+        // calculate size to copy, and add to ptr3
+        lda ptr2+1
+        sec
+        sbc ptr1+1
+        clc
+        adc ptr3+1
+        sta ptr3+1
+        lda ptr2
+        sec
+        sbc ptr1
+        clc 
+        adc ptr3
+        sta ptr3
+        lda ptr3+1
+        adc #$00
+        sta ptr3+1
+
+        ldy #$00
+!loop:  lda (ptr2),y
+        sta (ptr3),y
+        
+        // increment ptr3
+        lda ptr3
+        sec
+        sbc #$01
+        sta ptr3
+        lda ptr3+1
+        sbc #$00
+        sta ptr3+1
+
+        // decrement ptr2
+        lda ptr2
+        sec
+        sbc #$01
+        sta ptr2
+        lda ptr2+1
+        sbc #$00
+        sta ptr2+1
+
+        // check if ptr2 has hit ptr1
+        lda ptr2+1
+        cmp ptr1+1
+        bne !loop-
+        lda ptr2
+        cmp ptr1
+        bne !loop-
+        rts
