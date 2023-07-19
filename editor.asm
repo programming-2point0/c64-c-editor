@@ -49,7 +49,6 @@ rst_scr:sta $0400,x
         sta $d015
         lda #$e0
         sta $07f8
-        jsr make_crsr
 
         // draw border
         jsr border
@@ -194,22 +193,6 @@ cursor_down:
 
 !ret:   // TODO: Calculate new cursor positions for screen and memory
         rts     
-
-// NOTO: This should be part of the font-file ... not code here
-make_crsr:
-        ldx #$00
-        txa
-clr_crsr:
-        sta $3800,x
-        inx
-        cpx #$40
-        bne clr_crsr
-
-        lda #$ff
-      //  sta $3812
-        sta $3815
-
-        rts
 
 show_cursor:
         // shows the actual cursor at the current cursor_position
