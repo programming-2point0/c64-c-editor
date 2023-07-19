@@ -498,6 +498,27 @@ edit_dupl_line: {
         jmp mem_copy
 }
 
+edit_remove_line: {
+        // TODO: Find end of last line, right now, just fake it as hardcoded
+        lda #$43
+        sta ptr2+1
+        lda #$69
+        sta ptr2
+
+ // current line and next line
+        lda mem_line
+        sta ptr3
+        clc
+        adc #$26        // line-length
+        sta ptr1
+        lda mem_line+1
+        sta ptr3+1
+        adc #$00
+        sta ptr1+1
+
+        jmp mem_copy
+}
+
 edit_endofline: {
         // find the end of the current line - returns the position in A
         sty $04         // save Y
@@ -552,123 +573,71 @@ clr_last:
 
 edit_joinlines: {
         // find end of this line
+        jsr edit_endofline
+        sta $02
 
-        // find previous line
-        // find end of previous line
+        // find previous line (keep this one in ptr_tmp)
+        lda mem_line
+        sta ptr_tmp;
+        sec
+        sbc #$26
+        sta mem_line
+        lda mem_line+1
+        sta ptr_tmp+1
+        sbc #$00
+        sta mem_line+1
+
+        // find end of previous line - set mem_cursor to that pos, and remember in xpos
+        jsr edit_endofline
+        // if end of previous line is the line-length - nothing can be joined into it
+        cmp #$26
+        bne joinline_go
+        rts
+joinline_go:        
+        sta xpos
+        inc xpos
+        tax
+        clc
+        adc mem_line
+        sta mem_cursor
+        lda mem_line+1
+        adc #$00
+        sta mem_cursor+1
 
         // copy from beginning of this line to end of previous 
+        ldy #$00
+!:      lda (ptr_tmp),y
+        sta (mem_cursor),y
+        inx                     // count total characters 
+        iny
+        cpy $02
+        bne !-
 
         // if total is less than 26 (LINE_LENGTH) delete this line
         // else, fill remaining with spaces
-
-        rts
-}
-
-backspace:
-        ldx xpos
-        cpx #$01
-        bne normal_bs // TODO: Move this line up to the one before
-
-        ldy ypos
-        dey
-        jsr joinline
-
-        // TODO: Calc new cursor
-        rts
-
-        // move rest of this line one to the left
-
-normal_bs:        
-        ldy ypos
-        jsr scrptr
-        txa
-        tay
-bs_left:lda (ptr1),y
-        dey
-        sta (ptr1),y
-        iny
-        iny
-        cpy #$27
-        bne bs_left
+        cpx #$26
+        bcc delete_line
+        beq delete_line
+        // fill remaining line with spaces
         lda #$20
-        dey
-        sta (ptr1),y
-
-        dec xpos
-
-no_bs:  rts        
-
-joinline:
-        // line 1 in y - line 2 is y+1 - x is ignored (and destroyed)
-        sty $04
-        // find last character on line 1 - store in pointer2
-        jsr lastchr
-
-        lda ptr1
-        sta ptr2
-        lda ptr1+1
-        sta ptr2+1
-
-        // ptr2 contains address of last character on line 1
-        // find last character on line 2:
-        ldy $04
+!:      sta (mem_cursor),y
         iny
-        jsr scrptr
-        ldy #$27
-lspace: dey
-        beq emptylin
-        lda (ptr1),y
-        cmp #$20
-        beq lspace
-        tya
-        tax
-
-        // ptr1 contains address of first character on line 2
-        // y contains the index of the last character on the line
-        
-        // copy from line2[1] until line2[last] to line1[last++]
-        ldy #$01
-copy:   lda (ptr1),y
-        sta (ptr2),y
-        iny
-        //cpy #$27
-//        bne nextchar
-
-nextchar:dex
-        cpx #$00
-        bne copy
+        inx
+        cpx #$4c        // Two lines
+        bne !-
+joinline_end:
+        dec ypos
         rts
 
-
-
-
-lastchr:jsr scrptr
-        ldy #$27
-lsspace:dey
-        beq emptylin
-        lda (ptr1),y
-        cmp #$20
-        beq lsspace
-        tya
-        clc
-        adc ptr1
-        sta ptr1
-        lda ptr1+1
-        adc #$00
-        sta ptr1+1
-emptylin:
-        rts
-
-convertchar:
-        cmp #$40
-        bcc not_letter
-        bpl lower_case
-        sbc #$40
-lower_case:        
-        sbc #$40
-not_letter:
-        rts
-
+delete_line:
+        // delete the line currently in tmp 
+        lda ptr_tmp
+        sta mem_line
+        lda ptr_tmp+1
+        sta mem_line+1
+        jsr edit_remove_line
+        jmp joinline_end
+}
 
 border: {
         // Draw border on screen
@@ -706,22 +675,6 @@ b_vert: lda screen,x
         rts
 }       
 
-// TODO: This should be removed when backspace is re-done
-scrptr: pha
-        tya
-        pha
-        asl
-        tay
-        lda screen,y
-        sta ptr1
-        lda screen+1,y
-        sta ptr1+1
-        pla
-        tay
-        pla
-        rts
-
-
 st_setpos:
         // sets the position for the st-cursor x=x, y=y (a ignored (stacked))
         pha
@@ -755,6 +708,17 @@ st_print:
         pla
         ldy $04
         rts
+
+convertchar: {
+        cmp #$40
+        bcc not_letter
+        bpl lower_case
+        sbc #$40
+lower_case:        
+        sbc #$40
+not_letter:
+        rts
+}
 
 st_print_hex: {
         // prints a hexadecimal value (byte) to the current st-position
