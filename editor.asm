@@ -371,10 +371,20 @@ edit_newline: {
         // - if line was empty, insert another empty line
 
         jsr edit_dupl_line      // duplicate current line no matter what
-        // check if at beginning of line
+        // check if at beginning of line, or there are only empty spaces before xpos
         lda xpos
         cmp #$01
+        beq at_beginning
+        tay
+        dey
+check_for_no_spaces:
+        lda (mem_line),y
+        cmp #$20
         bne not_at_beginning
+        dey
+        bne check_for_no_spaces
+
+at_beginning:
         // clear current line (empty line before)
         ldy #$00
         lda #$20
@@ -382,9 +392,7 @@ edit_newline: {
         iny
         cpy #$26
         bne !-
-        // no change to cursor!
-        // TODO: Maybe move down - seems that's the usual way?
-        rts
+        jmp newline_end
 
 not_at_beginning:
         jsr edit_endofline      // find end of current (original) line
