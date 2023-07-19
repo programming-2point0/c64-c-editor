@@ -60,6 +60,8 @@ rst_scr:sta $0400,x
 
         // initialize cursor
         jsr crsr_init
+        jsr show_cursor
+        jsr show_cursor_coords
         
         lda #$17        // TODO: Make this number of lines somewhere else ...
         sta lines
@@ -95,44 +97,8 @@ wait:   jsr GETIN
         
 
 show_crsr:
-        ldx xpos        
-        cpx #$1d        // Check for out of bounds
-        lda #$00
-        rol             // turn bit 8 on if greater than 1d
-        sta $d010
-        txa
-        asl
-        asl
-        asl
-        adc #$18
-        sta $d000
-
-        lda ypos
-        asl
-        asl
-        asl
-        adc #$32
-        sta $d001
-
-        lda xpos
-        ldx #$2f
-        sec
-ct100s: inx
-        sbc #100
-        bcs ct100s
-        adc #100
-        stx $0410
-        ldx #$2f
-        sec
-ct10s:  inx
-        sbc #10
-        bcs ct10s
-        adc #$3a
-        stx $0411
-
-        tax
-        stx $0412
-
+        jsr show_cursor
+        jsr show_cursor_coords
         jmp wait
 
 crsr_init:
@@ -193,6 +159,54 @@ clr_crsr:
 
         rts
 
+show_cursor:
+        // shows the actual cursor at the current cursor_position
+        ldx xpos        
+        cpx #$1d        // Check for out of bounds
+        lda #$00
+        rol             // turn bit 8 on if greater than 1d
+        sta $d010
+        txa
+        asl
+        asl
+        asl
+        adc #$18
+        sta $d000
+
+        lda ypos
+        asl
+        asl
+        asl
+        adc #$32
+        sta $d001
+        rts
+
+show_cursor_coords:
+        // shows the current cursor coordinates in the status-line
+        ldx #$02
+        ldy #$18
+        jsr st_setpos
+
+        lda #$20        // Insert space before
+        jsr st_print
+
+        lda ypos
+        jsr st_print_dec       
+
+        lda #$3a        // :
+        jsr st_print
+        lda xpos
+        jsr st_print_dec
+
+        lda #$20        // insert space after
+        jsr st_print
+
+        lda #$80
+        jsr st_print    // end with line to erase earlier characters
+        jsr st_print
+        jsr st_print    // just in case - add some extras
+
+        rts
 
 
 printchar:
@@ -543,8 +557,42 @@ nibble: and #$0f
 hx_echo:jsr st_print
         rts
 
+st_print_dec:
+        // prints a decimal value (byte) to the current st-position (without leading zeroes) (destroys all registers)
+        ldy #$00
+        ldx #$2f
+        sec
+ct100s: inx
+        sbc #100        // count 100s
+        bcs ct100s
+        adc #100        // counts one too far, so add 100 again
+        cpx #$30
+        beq skip01      // don't print leading zeroes
+        iny             // count printed characters
+        pha
+        txa
+        jsr st_print    // print 100s
+        pla
+skip01: ldx #$2f
+        sec
+ct10s:  inx
+        sbc #10         // count 10s
+        bcs ct10s
+        adc #10         // counts too far, so add 10 again
+        cpx #$30
+        bne print10
+        cpy #$00
+        beq skip02
+print10:iny
+        pha
+        txa
+        jsr st_print    // print tens
+        pla
 
-
+skip02: clc
+        adc #$30
+        jsr st_print    // print ones
+        rts
 
 
 print:
