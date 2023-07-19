@@ -59,9 +59,8 @@ rst_scr:sta $0400,x
         // show memory on screen
 
         // initialize cursor
-        jsr crsr_init
-        jsr show_cursor
-        jsr show_cursor_coords
+        jsr cursor_init
+        jsr cursor_update
         
         lda #$17        // TODO: Make this number of lines somewhere else ...
         sta lines
@@ -69,8 +68,6 @@ rst_scr:sta $0400,x
 wait:   jsr GETIN
         cmp #$00
         beq wait
-
-
 
         ldx #$01
         ldy #$00
@@ -80,68 +77,123 @@ wait:   jsr GETIN
         pla
 
         cmp #$13
-        beq crsr_home_line
+        beq key_crsr_home
         cmp #$93
-        beq crsr_home
+        beq key_crsr_sh_home
         cmp #$91
-        beq crsr_up
+        beq key_crsr_up
         cmp #$11
-        beq crsr_down
+        beq key_crsr_down
         cmp #$9d
-        beq crsr_left
+        beq key_crsr_left
         cmp #$1d
-        beq crsr_right
+        beq key_crsr_right
 
         // todo: only if printable char
         jsr printchar
-        
-
-show_crsr:
-        jsr show_cursor
-        jsr show_cursor_coords
+nxtchar:jsr cursor_update
         jmp wait
 
-crsr_init:
+
+key_crsr_home:
+        jsr cursor_home
+        jmp nxtchar
+key_crsr_sh_home:
+        jsr cursor_top
+        jmp nxtchar
+key_crsr_left:
+        jsr cursor_left
+        jmp nxtchar
+key_crsr_right:
+        jsr cursor_right
+        jmp nxtchar
+key_crsr_up:
+        jsr cursor_up
+        jmp nxtchar
+key_crsr_down:
+        jsr cursor_down
+        jmp nxtchar
+
+// -------------------------------
+//  CURSOR handling
+// -------------------------------
+
+cursor_init:
         lda #$01
         sta xpos
         sta ypos
         rts
 
-crsr_home:
-        lda #$01
-        sta ypos
-crsr_home_line:
+cursor_update:
+        jsr show_cursor
+        jsr show_cursor_coords
+        rts
+
+cursor_home:
+        // move cursor to beginning of current line
         lda #$01
         sta xpos
-        jmp show_crsr
-crsr_up:
-        dec ypos
-        bne show_crsr
-        lda #$01
-        sta ypos
-        jmp show_crsr
+        // TODO: Calculate new cursor positions for screen and memory
+        rts
 
-crsr_down:
-        inc ypos
-        // TODO: Handle scroll
-        jmp show_crsr
-crsr_left:
+cursor_top:
+        // move cursor to top of screen (and beginning of that line)
+        // TODO: Handle scrolling - if screen isn't showing top of memory
+        lda #$01
+        sta xpos
+        sta ypos
+        // TODO: Calculate new cursor positions for screen and memory
+        rts
+
+cursor_left:
+        // move cursor to the left - if already at beginning of line, move to end of previous line
         dec xpos
-        bne show_crsr
+        bne !ret+       // not at beginning, return
         lda #$01
         cmp ypos
-        beq stay
-        lda #$26
+        beq stay        // if at very first line, ignore moving up, 
+        jsr cursor_up
+
+        lda #$26        // TODO: Find lastcharacter, rather than just end-pos
 stay:   sta xpos
-        jmp crsr_up
-crsr_right:
+        
+!ret:   // TODO: Calculate new cursor positions for screen and memory
+        rts
+
+cursor_right:
+        // move cursor to the right - if at the end of line, move to beginning of next line
         inc xpos
         lda xpos
         cmp #$27
-        bne show_crsr
+        bne !ret+       // not at end, return
+        lda #$01        
+        sta xpos        // reset x-pos
+        jsr cursor_down
+
+!ret:   // TODO: Calculate new cursor positions for screen and memory
+        rts
+
+cursor_up:
+        // move cursor up - if at top of screen (and memory), don't move
+        dec ypos
+        bne !ret+       // not at top, return
         lda #$01
-        sta xpos
-        jmp crsr_down
+        sta ypos
+!ret:   // TODO: Calculate new cursor positions for screen and memory
+        rts
+
+cursor_down:
+        // move cursor down - if at end of screen, scroll ...
+        inc ypos
+        lda ypos
+        cmp #$18
+        bne !ret+
+        // TODO: Handle scroll
+        lda #$17        // Don't do this, this just prevents scrolling down
+        sta ypos
+
+!ret:   // TODO: Calculate new cursor positions for screen and memory
+        rts     
 
 // NOTO: This should be part of the font-file ... not code here
 make_crsr:
