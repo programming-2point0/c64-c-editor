@@ -9,10 +9,10 @@ ptr1:   .word 0
 ptr2:   .word 0
 ptr3:   .word 0
 st_cursor: .word 0
-scr_cursor: .word 0
-scr_line: .word 0
-mem_cursor: .word 0
-mem_line: .word 0
+scr_cursor:     .word 0
+scr_line:       .word 0
+mem_cursor:     .word 0
+mem_line:       .word 0
 } 
 //      TODO: Get rid of these
         .var cur_line = $f9
@@ -132,8 +132,7 @@ cursor_home:
         // move cursor to beginning of current line
         lda #$01
         sta xpos
-        // TODO: Calculate new cursor positions for screen and memory
-        rts
+        jmp cursor_calculate
 
 cursor_top:
         // move cursor to top of screen (and beginning of that line)
@@ -141,13 +140,12 @@ cursor_top:
         lda #$01
         sta xpos
         sta ypos
-        // TODO: Calculate new cursor positions for screen and memory
-        rts
+        jmp cursor_calculate
 
 cursor_left:
         // move cursor to the left - if already at beginning of line, move to end of previous line
         dec xpos
-        bne !ret+       // not at beginning, return
+        bne cursor_calculate // not at beginning, done
         lda #$01
         cmp ypos
         beq stay        // if at very first line, ignore moving up, 
@@ -155,45 +153,100 @@ cursor_left:
 
         lda #$26        // TODO: Find lastcharacter, rather than just end-pos
 stay:   sta xpos
-        
-!ret:   // TODO: Calculate new cursor positions for screen and memory
-        rts
+        jmp cursor_calculate
 
 cursor_right:
         // move cursor to the right - if at the end of line, move to beginning of next line
         inc xpos
         lda xpos
         cmp #$27
-        bne !ret+       // not at end, return
+        bne cursor_calculate       // not at end, done
         lda #$01        
         sta xpos        // reset x-pos
-        jsr cursor_down
-
-!ret:   // TODO: Calculate new cursor positions for screen and memory
-        rts
+        jmp cursor_down
 
 cursor_up:
         // move cursor up - if at top of screen (and memory), don't move
         dec ypos
-        bne !ret+       // not at top, return
+        bne cursor_calculate       // not at top, done
         lda #$01
         sta ypos
-!ret:   // TODO: Calculate new cursor positions for screen and memory
-        rts
+        jmp cursor_calculate
 
 cursor_down:
         // move cursor down - if at end of screen, scroll ...
         inc ypos
         lda ypos
         cmp #$18
-        bne !ret+
+        bne cursor_calculate
         // TODO: Handle scroll
         lda #$17        // Don't do this, this just prevents scrolling down
         sta ypos
+        jmp cursor_calculate    // NOTE, while technically not needed here, makes for better structure
 
-!ret:   // TODO: Calculate new cursor positions for screen and memory
-        rts     
+cursor_calculate:
+        // use ypos and xpos to calculate screen and memory cursors
+        jsr cursor_calc_scr
+        jsr cursor_calc_mem
+        rts
 
+cursor_calc_scr:
+        // calculate screen-cursors
+        // scr_cursor - the exact address of the current position
+        // scr_line   - the address of the current line (the border, +1 is the first character)
+        // first the line - ignoring xpos
+        lda ypos
+        asl
+        tay
+        lda screen,y
+        sta scr_line
+        lda screen+1,y
+        sta scr_line+1
+        // then the cursor, add x to the line
+        lda xpos
+        clc
+        adc scr_line
+        sta scr_cursor
+        lda scr_line+1
+        adc #$00
+        sta scr_cursor+1
+        rts
+
+cursor_calc_mem:
+        // calculate memory cursors
+        // mem_cursor - the exact address of the current position
+        // mem_line - the address of the current line (0 is the first character) 
+        lda #$00
+        sta mem_line
+        lda #$40        // BASE ADDRESS is $4000 - TODO: Maybe put in variable, rather than hardcode ...
+        sta mem_line+1
+
+        ldy ypos
+nxline: dey
+        beq thisline
+        // add $26 (one line-length) to address
+        lda mem_line
+        clc
+        adc #$26
+        sta mem_line
+        lda mem_line+1
+        adc #$00
+        sta mem_line+1
+        jmp nxline
+
+thisline:        
+        // found line - now add xpos to cursor
+        ldx xpos
+        dex
+        txa
+        clc
+        adc mem_line
+        sta mem_cursor
+        lda mem_line+1
+        adc #$00
+        sta mem_cursor+1
+        rts
+        
 show_cursor:
         // shows the actual cursor at the current cursor_position
         ldx xpos        
@@ -243,24 +296,27 @@ show_cursor_coords:
 
         rts
 
+// ----------------------
+//  PRINTING
+// ----------------------
 
 printchar:
+        // TODO: Move from print to special keys
         cmp #$0d
         beq makenewline
         cmp #$14
         beq backspace
         jsr convertchar
-        // todo: keep curline, to avoid re-calculating
-        ldy ypos
-        jsr setcurline
 
-        jsr print
+        // prints the character in A - on screen and in memory
+        ldy #$00
+        sta (scr_cursor),y
+        sta (mem_cursor),y
 
         // move cursor to next position
-        inc xpos
-        lda xpos
-        cmp #$27
-        beq newline
+        jsr cursor_right
+        // TODO: Check if cursor is on new line - if so, then insert line
+   
         rts
 
 makenewline:
@@ -629,12 +685,6 @@ skip02: clc
         jsr st_print    // print ones
         rts
 
-
-print:
-        // prints the character in a at xpos of current line
-        ldy xpos
-        sta (cur_line),y
-        rts
 
 clearline:
         // clears the current line - overwrites with spaces
