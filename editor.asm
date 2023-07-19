@@ -1,31 +1,30 @@
+.const SCNKEY = $ff9f
+.const GETIN = $ffe4
+
 BasicUpstart2(Entry)
 
-*=$3000
+*=$3000 "Graphics"
         .import binary "c-font.font"
 
 *=$e0 virtual
 .zp {
-ptr1:           .word 0
-ptr2:           .word 0
-ptr3:           .word 0
-ptr_tmp:        .word 0
-st_cursor: .word 0
-scr_cursor:     .word 0
-scr_line:       .word 0
-mem_cursor:     .word 0
-mem_line:       .word 0
-} 
-//      TODO: Get rid of these
-        .var cur_line = $f9
-       
-        .var xpos = $fd
-        .var ypos = $fe        
+        xpos:           .byte 0
+        ypos:           .byte 0
+        ptr1:           .word 0
+        ptr2:           .word 0
+        ptr3:           .word 0
+        ptr_tmp:        .word 0
+        st_cursor:      .word 0
+        scr_cursor:     .word 0
+        scr_line:       .word 0
+        mem_cursor:     .word 0
+        mem_line:       .word 0
+}       // current 10 - max 16 bytes
+
+//      TODO: Get rid of this
         .var lines = $ff
         
-        .label SCNKEY = $ff9f
-        .label GETIN = $ffe4
-        
-        * = $0820
+        * = $0820 "Program"
 Entry:  // blue background color
         lda #$06
         sta $d020
@@ -58,9 +57,9 @@ Entry:  // blue background color
         lda #$17        // TODO: Make this number of lines somewhere else ...
         sta lines
 
-wait:   jsr GETIN
+getkey: jsr GETIN
         cmp #$00
-        beq wait
+        beq getkey
 
         ldx #$01
         ldy #$00
@@ -98,7 +97,7 @@ wait:   jsr GETIN
         // todo: only if printable char
         jsr printchar
 nxtchar:jsr cursor_update
-        jmp wait
+        jmp getkey
 
 
 key_crsr_home:
@@ -364,12 +363,13 @@ printchar:
 //    - all editing routines only edit memory, not screen!  
 // ------------------
 
-edit_newline:
+edit_newline: {
         // inserts a new-line below this one - breaks the current line at current xpos if needed
         // - if cursor is at beginning, insert empty line before this
         // - if cursor is at end, insert empty line after this
         // - if cursor is in the middle, break line at cursor
         // - if line was empty, insert another empty line
+
         jsr edit_dupl_line      // duplicate current line no matter what
         // check if at beginning of line
         lda xpos
@@ -383,6 +383,7 @@ edit_newline:
         cpy #$26
         bne !-
         // no change to cursor!
+        // TODO: Maybe move down - seems that's the usual way?
         rts
 
 not_at_beginning:
@@ -439,8 +440,9 @@ newline_end:
         lda #$01
         sta xpos
         rts       
+}
 
-edit_dupl_line:
+edit_dupl_line: {
         // add a new line in memory after current line
         // copy from current line until end of last line into next line
 
@@ -462,8 +464,9 @@ edit_dupl_line:
         sta ptr3+1
 
         jmp mem_copy
+}
 
-edit_endofline:
+edit_endofline: {
         // find the end of the current line - returns the position in A
         ldy #$26
 look_for_end:
@@ -476,7 +479,7 @@ end_found:
         iny
         tya
         rts        
-
+}
 
 backspace:
         ldx xpos
@@ -584,7 +587,7 @@ not_letter:
         rts
 
 
-border: 
+border: {
         // Draw border on screen
         lda #$40
         ldx #$27
@@ -618,10 +621,9 @@ b_vert: lda screen,x
         lda #$6E  // top right
         sta $0427
         rts
-        
+}       
 
-
-
+// TODO: This should be removed when backspace is re-done
 scrptr: pha
         tya
         pha
@@ -635,7 +637,6 @@ scrptr: pha
         tay
         pla
         rts
-
 
 
 st_setpos:
@@ -672,7 +673,7 @@ st_print:
         ldy $04
         rts
 
-st_print_hex:
+st_print_hex: {
         // prints a hexadecimal value (byte) to the current st-position
         pha
         lsr
@@ -689,8 +690,8 @@ nibble: and #$0f
         adc #$06        // if not - add 7 (6+1c)
 hx_echo:jsr st_print
         rts
-
-st_print_dec:
+}
+st_print_dec: {
         // prints a decimal value (byte) to the current st-position (without leading zeroes) (destroys all registers)
         ldy #$00
         ldx #$2f
@@ -726,7 +727,7 @@ skip02: clc
         adc #$30
         jsr st_print    // print ones
         rts
-
+}
 screen: .word $0400, $0428, $0450, $0478, $04A0, $04C8, $04F0 
         .word $0518, $0540, $0568, $0590, $05B8, $05E0
         .word $0608, $0630, $0658, $0680, $06A8, $06D0, $06F8
@@ -750,7 +751,7 @@ mem_init:
         jsr mem_fill
         rts
 
-mem_show:
+mem_show: {
         // prints the entire screen full from memory
         // screen starts at 0429
         lda #$04
@@ -795,8 +796,8 @@ pm_chr: lda (ptr2),y
         dex
         bne pm_line
         rts
-
-mem_fill:
+}
+mem_fill: {
         // fills the memory from ptr1 to ptr2 with whatever is in A
         tax
         lda #$00
@@ -818,8 +819,8 @@ same_page:
         cpy ptr2
         bne fill_loop
         rts
-
-mem_copy:
+}
+mem_copy: {
         // copies the memory from ptr1 to ptr2 into ptr3
         // if ptr3 (dest) is before/less than ptr1 (start of source) -> copy forwards
         // if ptr3 (dest) is after ptr1 (start of source) -> copy backward
@@ -831,8 +832,8 @@ check_lo:
         lda ptr3
         cmp ptr1
         bpl mem_copy_bwd
-        
-mem_copy_fwd:
+}        
+mem_copy_fwd: {
         // copies the memory from ptr1 to ptr2 into ptr3 - starting from ptr1 (destroys ptr1 and ptr3)
         ldy #$00
 !loop:  lda (ptr1),y
@@ -864,8 +865,8 @@ mem_copy_fwd:
         cmp ptr2
         bne !loop-
         rts
-
-mem_copy_bwd:        
+}
+mem_copy_bwd: {       
         // copies the memory from ptr1 to ptr2 into ptr3 - starting with ptr2
         // calculate size to copy, and add to ptr3
         // ptr3 = ptr2 + ptr3 - ptr1 
@@ -919,3 +920,4 @@ mcpy:   lda (ptr2),y
         cmp ptr1
         bne !loop-
         rts
+}
