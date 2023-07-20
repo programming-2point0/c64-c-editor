@@ -612,8 +612,10 @@ clr_last:
 
 edit_joinlines: {
         // find end of this line
-        jsr edit_endofline
-        sta $02
+        jsr edit_endofline      
+        cmp #$00        // if empty line - just delete the entire line
+        beq delete_line_in_mem
+        sta $02         // remember the end for later
 
         // find previous line (keep this one in ptr_tmp)
         lda mem_line
@@ -649,7 +651,7 @@ joinline_go:
         sta (mem_cursor),y
         inx                     // count total characters 
         iny
-        cpy $02
+        cpy $02                 // check if we have reached the end of the original line
         bne !-
 
         // if total is less than LINE_LENGTH delete this line
@@ -669,11 +671,12 @@ joinline_end:
         rts
 
 delete_line:
-        // delete the line currently in tmp 
+        // delete the line currently in tmp (by copying tmp to mem)
         lda ptr_tmp
         sta mem_line
         lda ptr_tmp+1
         sta mem_line+1
+delete_line_in_mem:        
         jsr edit_remove_line
         jmp joinline_end
 }
