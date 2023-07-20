@@ -243,9 +243,9 @@ cursor_left: {
         cmp ypos
         beq stay        // if at very first line, ignore moving up, 
         jsr cursor_up
-
-        lda #$26        // TODO: Find lastcharacter, rather than just end-pos
+        jsr edit_endofline // Move to last character, rather than just end-pos
 stay:   sta xpos
+        inc xpos
         jmp cursor_calculate
 }
 
