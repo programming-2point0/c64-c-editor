@@ -5,10 +5,13 @@
 .const SPACE = $20
 
 
+
 BasicUpstart2(Entry)
 
-*=$3000 "Graphics"
+*=$2000 "Graphics"
         .import binary "c-font.font"
+
+.var MEM_BASE = $3000
 
 *=$e0 virtual
 .zp {
@@ -33,13 +36,13 @@ Entry:  // blue background color
         sta $d021
 
         // select font
-        lda #$1c        // select at address 00ab c000 0000 0000 - by setting xxxx abcx = xxxx 1100 => $3000
+        lda #%0011000        // select at address 00ab c000 0000 0000 - by setting xxxx abcx = xxxx 1000 => $2000
         sta $d018       
 
         // turn on cursor (sprite)
         lda #$1
         sta $d015
-        lda #$e0
+        lda #$a0              // cursor at Address $2800 = $a0 * $40
         sta $07f8
 
         // draw border
@@ -175,10 +178,10 @@ key_f4:
         // clear screen
         lda #SPACE
         ldy #$00
-clsr:   sta $4000,y
-        sta $4100,y
-        sta $4200,y
-        sta $4300,y
+clsr:   sta $3000,y
+        sta $3100,y
+        sta $3200,y
+        sta $3300,y
         iny
         bne clsr
         jsr mem_show
@@ -320,9 +323,9 @@ cursor_calc_mem: {
         // calculate memory cursors
         // mem_cursor - the exact address of the current position
         // mem_line - the address of the current line (0 is the first character) 
-        lda #$00
+        lda #<MEM_BASE
         sta mem_line
-        lda #$40        // BASE ADDRESS is $4000 - TODO: Maybe put in variable, rather than hardcode ...
+        lda #>MEM_BASE
         sta mem_line+1
 
         ldy ypos
@@ -668,8 +671,7 @@ joinline_go:
         cpx #$4c        // Two lines
         bne !-
 joinline_end:
-        dec ypos
-        rts
+        jmp cursor_up        
 
 delete_line:
         // delete the line currently in tmp (by copying tmp to mem)
@@ -870,12 +872,12 @@ screen: .word $0400, $0428, $0450, $0478, $04A0, $04C8, $04F0
 // ------------------------
 
 mem_init:
-        // fill memory from 4000 to 4400 with 20
-        lda #$40
+        // fill memory from MEM_BASE to MEM_BASE + $400 (1KB) with SPACES
+        lda #>MEM_BASE
         sta ptr1+1
-        lda #$44
+        lda #(>MEM_BASE)+4
         sta ptr2+1
-        lda #$00
+        lda #<MEM_BASE
         sta ptr1
         sta ptr2
         lda #SPACE
@@ -891,9 +893,9 @@ mem_show: {
         sta ptr1
 
         // TODO: use offset and enable scroll
-        lda #$40
+        lda #>MEM_BASE
         sta ptr2+1
-        lda #$00
+        lda #<MEM_BASE
         sta ptr2
 
         ldx #$17        // lines to copy
