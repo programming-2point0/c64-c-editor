@@ -1,6 +1,8 @@
 .const SCNKEY = $ff9f
 .const GETIN = $ffe4
 
+
+
 BasicUpstart2(Entry)
 
 *=$3000 "Graphics"
@@ -21,9 +23,7 @@ BasicUpstart2(Entry)
         mem_line:       .word 0
 }       // current 10 - max 16 bytes
 
-//      TODO: Get rid of this
-        .var lines = $ff
-        
+       
         * = $0820 "Program"
 Entry:  // blue background color
         lda #$06
@@ -52,10 +52,7 @@ Entry:  // blue background color
         // initialize cursor
         jsr cursor_init
         jsr cursor_calculate
-        jsr cursor_update
-        
-        lda #$17        // TODO: Make this number of lines somewhere else ...
-        sta lines
+        jsr cursor_update      
 
 getkey: jsr GETIN
         cmp #$00
@@ -70,8 +67,8 @@ getkey: jsr GETIN
 
         cmp #$13
         beq key_crsr_home
-        cmp #$93
-        beq key_crsr_sh_home
+//        cmp #$93
+//        beq key_crsr_sh_home
         cmp #$91
         beq key_crsr_up
         cmp #$11
@@ -116,9 +113,6 @@ nxtchar:jsr cursor_update
 
 key_crsr_home:
         jsr cursor_home
-        jmp nxtchar
-key_crsr_sh_home:
-        jsr cursor_top
         jmp nxtchar
 key_crsr_left:
         jsr cursor_left
@@ -190,11 +184,20 @@ cursor_update:
         jsr show_cursor_coords
         rts
 
-cursor_home:
+cursor_home: {
         // move cursor to beginning of current line
+        // if already at beginning of current line, move to top of screen
+        // if already at top of screen, scroll to top of memory-text
         lda #$01
-        sta xpos
+        cmp xpos
+        bne setxpos
+        cmp ypos
+        bne setypos
+        // TODO: scroll
+setypos:sta ypos       
+setxpos:sta xpos
         jmp cursor_calculate
+}
 
 cursor_top:
         // move cursor to top of screen (and beginning of that line)
