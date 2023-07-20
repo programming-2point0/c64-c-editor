@@ -142,7 +142,8 @@ key_delete:
         jmp nxtchar
 
 key_insert:
-
+        jsr edit_insert_char
+        jsr mem_show
         jmp nxtchar
 
 key_f1:
@@ -681,6 +682,48 @@ delete_line_in_mem:
         jmp joinline_end
 }
 
+edit_insert_char: {
+        // inserts an empty space at xpos - shifts remainder of line to the right
+        // find end of the line
+        jsr edit_endofline
+        cmp xpos
+        bpl insert_and_shift
+        // if nothing is after cursor, ignore
+        rts
+insert_and_shift:
+        tay
+        // Check if A is LINE_LENGTH - that means we need a new (empty) line
+        cmp #LINE_LENGTH
+        bne shift
+        jsr edit_dupl_line
+        tya
+        tax                     // store Y in X
+        ldy #LINE_LENGTH
+        lda #SPACE
+!:      sta (mem_line),y
+        iny
+        cpy #LINE_LENGTH*2
+        bne !-
+        txa
+        tay                     // restore Y from X
+shift:  
+        dey
+        lda (mem_line),y
+        iny
+        sta (mem_line),y
+        dey        
+        cpy xpos
+        bpl shift
+        lda #SPACE
+        sta (mem_line),y
+        
+        rts
+
+
+
+        
+}
+
 border: {
         // Draw border on screen
         lda #$40
@@ -912,6 +955,12 @@ mem_copy: {
         // copies the memory from ptr1 to ptr2 into ptr3
         // if ptr3 (dest) is before/less than ptr1 (start of source) -> copy forwards
         // if ptr3 (dest) is after ptr1 (start of source) -> copy backward
+        pha
+        tya
+        pha
+        txa
+        pha
+
         lda ptr3+1
         cmp ptr1+1
         beq check_lo
@@ -920,8 +969,8 @@ check_lo:
         lda ptr3
         cmp ptr1
         bpl mem_copy_bwd
-}        
-mem_copy_fwd: {
+        
+mem_copy_fwd: 
         // copies the memory from ptr1 to ptr2 into ptr3 - starting from ptr1 (destroys ptr1 and ptr3)
         ldy #$00
 !loop:  lda (ptr1),y
@@ -952,9 +1001,15 @@ mem_copy_fwd: {
         lda ptr1
         cmp ptr2
         bne !loop-
+mem_copy_done:
+        pla
+        tax
+        pla
+        tay
+        pla        
         rts
-}
-mem_copy_bwd: {       
+
+mem_copy_bwd:      
         // copies the memory from ptr1 to ptr2 into ptr3 - starting with ptr2
         // calculate size to copy, and add to ptr3
         // ptr3 = ptr2 + ptr3 - ptr1 
@@ -1007,5 +1062,5 @@ mcpy:   lda (ptr2),y
         lda ptr2
         cmp ptr1
         bne !loop-
-        rts
+        jmp mem_copy_done
 }
