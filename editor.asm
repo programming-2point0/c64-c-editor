@@ -116,6 +116,7 @@ getkey: jsr GETIN
 */
         // todo: only if printable char
         jsr printchar
+        jsr color_line
 nxtchar:jsr cursor_update
         jmp getkey
 
@@ -424,6 +425,62 @@ printchar:
         // TODO: Check if cursor is on new line - if so, then insert line
    
         rts
+
+// --------------------
+//  COLORING
+//    - syntax highlighting -
+//    WHITE  - keywords, eg void, int, struct, char
+//    YELLOW - symbols, eg ()*&[]{}
+//    GREEN  - letters (not in keywords)
+//    GREY   - numbers
+
+.const COLOR_WHITE = 1
+.const COLOR_YELLOW = 7
+.const COLOR_GREEN = 5  // maybe _5_ or 13
+.const COLOR_GREY = 15  // maybe 11 or _12_ or 15 ..
+
+color_line:
+        // colorizes the current line, according to syntax highlighting
+        lda scr_line    // use the screen-line, as the mem-line might be offset
+        clc
+        adc #$01
+        sta ptr_tmp
+        lda scr_line+1
+        adc #$d4
+        sta ptr_tmp+1
+
+        ldy #$00
+colorize:        
+        lda (mem_line),y        // check character
+        cmp #$1b
+        bmi letter
+        cmp #$30
+        bmi symbol
+        cmp #$3a
+        bmi number
+        cmp #$40
+        bmi symbol
+        cmp #$5b
+        bmi letter
+
+        // default to yellow
+        lda #COLOR_YELLOW
+color_char:
+        sta (ptr_tmp),y
+        iny
+        cpy #$26
+        bne colorize                
+
+        rts
+
+letter: lda #COLOR_GREEN
+        jmp color_char
+symbol: lda #COLOR_YELLOW
+        jmp color_char
+number: lda #COLOR_GREY
+        jmp color_char
+
+
 
 // ------------------
 //  EDITING 
