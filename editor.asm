@@ -39,6 +39,10 @@ Entry:  // blue background color
         lda #%0011000        // select at address 00ab c000 0000 0000 - by setting xxxx abcx = xxxx 1000 => $2000
         sta $d018       
 
+        // disable SHIFT+C=
+        lda #$80
+        sta $0291
+
         // turn on cursor (sprite)
         lda #$1
         sta $d015
