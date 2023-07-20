@@ -392,27 +392,30 @@ printchar:
 
 edit_newline: {
         // inserts a new-line below this one - breaks the current line at current xpos if needed
-        // - if cursor is at beginning, insert empty line before this
-        // - if cursor is at end, insert empty line after this
+        // - if cursor is at beginning, insert empty line BEFORE this
+        // - if cursor is at end, or line is empty, insert empty line AFTER this
         // - if cursor is in the middle, break line at cursor
-        // - if line was empty, insert another empty line
 
-        jsr edit_dupl_line      // duplicate current line no matter what
-        // check if at beginning of line, or there are only empty spaces before xpos
+        // duplicate current line no matter what
+        jsr edit_dupl_line      
+
+        // if we are at the beginning of the line, or there are only empty spaces before cursor:
+        // - insert a new line BEFORE this
+        // - else, go to not_at_beginning, and break the line
         lda xpos
         cmp #$01
         beq at_beginning
         tay
         dey
-check_for_no_spaces:
+only_spaces:
         lda (mem_line),y
         cmp #$20
         bne not_at_beginning
         dey
-        bne check_for_no_spaces
+        bpl only_spaces
 
 at_beginning:
-        // clear current line (empty line before)
+        // clear current line (insert empty line before)
         ldy #$00
         lda #$20
 !:      sta (mem_line),y
@@ -422,14 +425,16 @@ at_beginning:
         jmp newline_end
 
 not_at_beginning:
-        jsr edit_endofline      // find end of current (original) line
-        // if line was empty, an empty line was duplicated, move to that, and nothing else
-        beq newline_end
-        // if line ends before xpos
+        // The line is not empty - if we are at the end of the line
+        // - insert a new line AFTER this
+        // - else, break the line at cursor position
+
+        // find end of current (original) line
+        jsr edit_endofline      
         cmp xpos        
-        bpl newline_break       // xpos was before end of line
-        // xpos was efter end of line
-        // so clear the new line
+        bpl newline_break       // line ends after xpos
+
+        // insert new line AFTER this (by clearing the duplicate)
         ldy #$26
         lda #$20
 !:      sta (mem_line),y
@@ -438,13 +443,13 @@ not_at_beginning:
         bne !-
         jmp newline_end      
 
-newline_break:        
+newline_break:
+        // break the line at the cursor        
         sec
-        sbc xpos                // x = x - xpos
+        sbc xpos                // x = end_of_line - xpos
         tax
-        inx                     // and add another one, because we end at 0
 
-        // find next line
+        // find next line, store in ptr_tmp
         lda mem_line
         clc
         adc #$26
@@ -454,14 +459,13 @@ newline_break:
         sta ptr_tmp+1
         // copy / move from current-pos to next_line
         ldy #$00
-brk_loop:
-        lda (mem_cursor),y
+!:      lda (mem_cursor),y
         sta (ptr_tmp),y
         lda #$20                // "remove" (overwrite with space) after copy
         sta (mem_cursor),y
         iny
         dex                     // copy only characters between xpos and end of line/last character
-        bne brk_loop
+        bpl !-
 
         // clear remaining of next line
 !:      cpy #$26
@@ -528,7 +532,7 @@ edit_endofline: {
         ldy #$26
 look_for_end:
         dey
-        beq end_found
+        bmi end_found
         lda (mem_line),y
         cmp #$20
         beq look_for_end
