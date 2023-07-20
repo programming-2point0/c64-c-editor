@@ -1,6 +1,8 @@
 .const SCNKEY = $ff9f
 .const GETIN = $ffe4
 
+.const LINE_LENGTH = $26
+.const SPACE = $20
 
 
 BasicUpstart2(Entry)
@@ -93,12 +95,12 @@ getkey: jsr GETIN
         beq key_f2
         cmp #$86
         beq key_f3
-        /*
+  
         cmp #$8a
         beq key_f4
         cmp #$87
         beq key_f5
-        cmp #$8b
+/*        cmp #$8b
         beq key_f6
         cmp #$88
         beq key_f7
@@ -152,7 +154,7 @@ key_f2:
 db_fl:  tya
         sta (mem_line),y
         iny
-        cpy #$26
+        cpy #LINE_LENGTH
         bne db_fl
         jsr mem_show
         jmp nxtchar
@@ -160,12 +162,37 @@ db_fl:  tya
 key_f3:
         // clear current line
         ldy #$00
-        lda #$20
+        lda #SPACE
 db_cl:  sta (mem_line),y
         iny
-        cpy #$26
+        cpy #LINE_LENGTH
         bne db_cl
         jsr mem_show
+        jmp nxtchar
+key_f5: jmp key_f5_long
+key_f4:
+        // clear screen
+        lda #SPACE
+        ldy #$00
+clsr:   sta $4000,y
+        sta $4100,y
+        sta $4200,y
+        sta $4300,y
+        iny
+        bne clsr
+        jsr mem_show
+        jmp nxtchar
+
+key_f5_long:
+        // write a, b, c, d and so on
+        ldx #$41
+alfa:   txa
+        jsr printchar
+        jsr cursor_down
+        inx
+        lda ypos
+        cmp #$16
+        bne alfa
         jmp nxtchar
 
 
@@ -252,8 +279,18 @@ cursor_down:
 
 cursor_calculate:
         // use ypos and xpos to calculate screen and memory cursors
+        pha
+        txa
+        pha
+        tya
+        pha
         jsr cursor_calc_scr
         jsr cursor_calc_mem
+        pla
+        tay
+        pla
+        tax
+        pla
         rts
 
 cursor_calc_scr:
@@ -290,10 +327,10 @@ cursor_calc_mem: {
         ldy ypos
 nxline: dey
         beq thisline
-        // add $26 (one line-length) to address
+        // add one line-length, Y times, to address
         lda mem_line
         clc
-        adc #$26
+        adc #LINE_LENGTH
         sta mem_line
         lda mem_line+1
         adc #$00
@@ -341,7 +378,7 @@ show_cursor_coords:
         ldy #$18
         jsr st_setpos
 
-        lda #$20        // Insert space before
+        lda #SPACE      // Insert space before
         jsr st_print
 
         lda ypos
@@ -352,7 +389,7 @@ show_cursor_coords:
         lda xpos
         jsr st_print_dec
 
-        lda #$20        // insert space after
+        lda #SPACE      // insert space after
         jsr st_print
 
         lda #$80
@@ -367,11 +404,6 @@ show_cursor_coords:
 // ----------------------
 
 printchar:
-        // TODO: Move from print to special keys
-//        cmp #$0d
-//        beq makenewline
-//        cmp #$14
-//        beq backspace
         jsr convertchar
 
         // prints the character in A - on screen and in memory
@@ -409,7 +441,7 @@ edit_newline: {
         dey
 only_spaces:
         lda (mem_line),y
-        cmp #$20
+        cmp #SPACE
         bne not_at_beginning
         dey
         bpl only_spaces
@@ -417,10 +449,10 @@ only_spaces:
 at_beginning:
         // clear current line (insert empty line before)
         ldy #$00
-        lda #$20
+        lda #SPACE
 !:      sta (mem_line),y
         iny
-        cpy #$26
+        cpy #LINE_LENGTH
         bne !-
         jmp newline_end
 
@@ -435,11 +467,11 @@ not_at_beginning:
         bpl newline_break       // line ends after xpos
 
         // insert new line AFTER this (by clearing the duplicate)
-        ldy #$26
-        lda #$20
+        ldy #LINE_LENGTH
+        lda #SPACE
 !:      sta (mem_line),y
         iny
-        cpy #$4c
+        cpy #LINE_LENGTH*2
         bne !-
         jmp newline_end      
 
@@ -452,7 +484,7 @@ newline_break:
         // find next line, store in ptr_tmp
         lda mem_line
         clc
-        adc #$26
+        adc #LINE_LENGTH
         sta ptr_tmp
         lda mem_line+1
         adc #$00
@@ -461,16 +493,16 @@ newline_break:
         ldy #$00
 !:      lda (mem_cursor),y
         sta (ptr_tmp),y
-        lda #$20                // "remove" (overwrite with space) after copy
+        lda #SPACE              // "remove" (overwrite with space) after copy
         sta (mem_cursor),y
         iny
         dex                     // copy only characters between xpos and end of line/last character
         bpl !-
 
         // clear remaining of next line
-!:      cpy #$26
+!:      cpy #LINE_LENGTH
         beq newline_end
-        lda #$20
+        lda #SPACE
         sta (ptr_tmp),y
         iny
         jmp !-
@@ -495,7 +527,7 @@ edit_dupl_line: {
         lda mem_line
         sta ptr1
         clc
-        adc #$26        // line-length
+        adc #LINE_LENGTH
         sta ptr3
         lda mem_line+1
         sta ptr1+1
@@ -516,7 +548,7 @@ edit_remove_line: {
         lda mem_line
         sta ptr3
         clc
-        adc #$26        // line-length
+        adc #LINE_LENGTH
         sta ptr1
         lda mem_line+1
         sta ptr3+1
@@ -529,12 +561,12 @@ edit_remove_line: {
 edit_endofline: {
         // find the end of the current line - returns the position in A
         sty $04         // save Y
-        ldy #$26
+        ldy #LINE_LENGTH
 look_for_end:
         dey
         bmi end_found
         lda (mem_line),y
-        cmp #$20
+        cmp #SPACE
         beq look_for_end
 end_found:
         iny
@@ -571,7 +603,7 @@ shift_left:
         
 clr_last:
         // put a space over the last position
-        lda #$20
+        lda #SPACE
         dey
         sta (mem_line),y
         dec xpos
@@ -587,7 +619,7 @@ edit_joinlines: {
         lda mem_line
         sta ptr_tmp;
         sec
-        sbc #$26
+        sbc #LINE_LENGTH
         sta mem_line
         lda mem_line+1
         sta ptr_tmp+1
@@ -597,7 +629,7 @@ edit_joinlines: {
         // find end of previous line - set mem_cursor to that pos, and remember in xpos
         jsr edit_endofline
         // if end of previous line is the line-length - nothing can be joined into it
-        cmp #$26
+        cmp #LINE_LENGTH
         bne joinline_go
         rts
 joinline_go:        
@@ -620,13 +652,13 @@ joinline_go:
         cpy $02
         bne !-
 
-        // if total is less than 26 (LINE_LENGTH) delete this line
+        // if total is less than LINE_LENGTH delete this line
         // else, fill remaining with spaces
-        cpx #$26
+        cpx #LINE_LENGTH
         bcc delete_line
         beq delete_line
         // fill remaining line with spaces
-        lda #$20
+        lda #SPACE
 !:      sta (mem_cursor),y
         iny
         inx
@@ -649,7 +681,7 @@ delete_line:
 border: {
         // Draw border on screen
         lda #$40
-        ldx #$27
+        ldx #LINE_LENGTH+1
 b_hori: sta $0400,x
         sta $07c0,x
         dex
@@ -663,7 +695,7 @@ b_vert: lda screen,x
         lda #$7b
         ldy #$00
         sta (ptr1),y
-        ldy #$27
+        ldy #LINE_LENGTH+1
         sta (ptr1),y
         inx
         inx
@@ -735,7 +767,6 @@ st_print_hex: {
         lsr
         lsr
         jsr nibble
-        inx
         pla
 nibble: and #$0f
         ora #$30        // add digit "0"
@@ -801,7 +832,7 @@ mem_init:
         lda #$00
         sta ptr1
         sta ptr2
-        lda #$20
+        lda #SPACE
         jsr mem_fill
         rts
 
@@ -824,7 +855,7 @@ pm_line:ldy #$00
 pm_chr: lda (ptr2),y
         sta (ptr1),y
         iny
-        cpy #$26
+        cpy #LINE_LENGTH
         bne pm_chr
 
         // add y to memory-ptr
