@@ -123,6 +123,11 @@ getkey: jsr GETIN
 nxtchar:jsr cursor_update
         jmp getkey
 
+key_f1: jmp key_f1_long
+key_f2: jmp key_f2_long
+key_f3: jmp key_f3_long
+key_f4: jmp key_f4_long
+key_f5: jmp key_f5_long
 
 key_crsr_home:
         jsr cursor_home
@@ -143,24 +148,30 @@ key_crsr_down:
 key_return:
         jsr edit_newline
         jsr cursor_calculate
+        jsr color_line
         jsr mem_show
         jmp nxtchar
 
 key_delete:
         jsr edit_delete_char
         jsr cursor_calculate
+        jsr color_line
         jsr mem_show
         jmp nxtchar
 
 key_insert:
         jsr edit_insert_char
+        jsr color_line
         jsr mem_show
         jmp nxtchar
 
-key_f1:
+
+
+key_f1_long:
         jsr mem_show
         jmp nxtchar
-key_f2:
+
+key_f2_long:
         // fill current line with letters and numbers
         ldy #$00
 db_fl:  tya
@@ -171,7 +182,7 @@ db_fl:  tya
         jsr mem_show
         jmp nxtchar
 
-key_f3:
+key_f3_long:
         // clear current line
         ldy #$00
         lda #SPACE
@@ -181,8 +192,8 @@ db_cl:  sta (mem_line),y
         bne db_cl
         jsr mem_show
         jmp nxtchar
-key_f5: jmp key_f5_long
-key_f4:
+
+key_f4_long:
         // clear screen
         lda #SPACE
         ldy #$00
