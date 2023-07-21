@@ -29,7 +29,7 @@ BasicUpstart2(Entry)
         color_mode:     .byte 0
         color_start:    .byte 0
         color_end:      .byte 0        
-}       // current 10 - max 16 bytes
+}       // current 13 - max 16 bytes
 
        
         * = $0820 "Program"
@@ -697,9 +697,9 @@ edit_dupl_line: {
         // copy from current line until end of last line into next line
 
         // TODO: Find end of last line, right now, just fake it as hardcoded
-        lda #$43
+        lda #$33
         sta ptr2+1
-        lda #$69
+        lda #$ff
         sta ptr2
 
         // current line and next line
@@ -713,7 +713,32 @@ edit_dupl_line: {
         adc #$00
         sta ptr3+1
 
-        jmp mem_copy
+        jsr mem_copy
+
+        // also duplicate colors
+        lda #$db
+        sta ptr2+1
+        lda #$97        // skip last line, since that is for the border
+        sta ptr2
+
+        // first: add D4 to base addresses
+        lda scr_line+1
+        clc
+        adc #$d4
+        sta ptr1+1
+        sta ptr3+1
+
+        // then add line length +2
+        lda scr_line
+        sta ptr1
+        clc
+        adc #LINE_LENGTH+2
+        sta ptr3
+        lda ptr3+1
+        adc #$00
+        sta ptr3+1
+        
+        jmp mem_copy     
 }
 
 edit_remove_line: {
@@ -1149,6 +1174,7 @@ check_lo:
         
 mem_copy_fwd: 
         // copies the memory from ptr1 to ptr2 into ptr3 - starting from ptr1 (destroys ptr1 and ptr3)
+        // TODO: Modify this to work like copy_bwd with calculating sizes and blocks
         ldy #$00
 !loop:  lda (ptr1),y
         sta (ptr3),y
@@ -1188,56 +1214,53 @@ mem_copy_done:
 
 mem_copy_bwd:      
         // copies the memory from ptr1 to ptr2 into ptr3 - starting with ptr2
-        // calculate size to copy, and add to ptr3
-        // ptr3 = ptr2 + ptr3 - ptr1 
-        // first calculate ptr3 = ptr2 + ptr3
+        // calculate size to copy, and add to ptr3 - store size in ptr_tmp
         lda ptr2
-        clc
-        adc ptr3
-        sta ptr3
-        lda ptr2+1
-        adc ptr3+1
-        sta ptr3+1
-        // anything in carry here? shouldn't be, unless we go over ffff, and we wouldn't
-
-        // then calculate ptr3 = ptr3 - ptr1 (make sure to check for borrowing!)
-        lda ptr3
         sec
         sbc ptr1
-        sta ptr3
-        lda ptr3+1
+        sta ptr_tmp
+        lda ptr2+1
         sbc ptr1+1
-        sta ptr3+1
+        sta ptr_tmp+1
 
-        ldy #$00
-        jmp mcpy
-!loop:  // increment ptr3
-        lda ptr3
-        sec
-        sbc #$01
-        sta ptr3
+        // copy last block - that is only a partial block
+        // - find dest block start by adding size to dest
         lda ptr3+1
-        sbc #$00
+        clc
+        adc ptr_tmp+1
         sta ptr3+1
-
-        // decrement ptr2
-        lda ptr2
-        sec
-        sbc #$01
-        sta ptr2
-        lda ptr2+1
-        sbc #$00
-        sta ptr2+1
-
-mcpy:   lda (ptr2),y
+        // - find src block start by adding size to src
+        lda ptr1+1
+        clc
+        adc ptr_tmp+1
+        sta ptr1+1
+        // - copy block backwards, start with size
+        ldy ptr_tmp
+!:      lda (ptr1),y
         sta (ptr3),y
+        dey
+        cpy #$ff
+        bne !-  
 
-        // check if ptr2 has hit ptr1
-        lda ptr2+1
-        cmp ptr1+1
-        bne !loop-
-        lda ptr2
-        cmp ptr1
-        bne !loop-
+        // copy remaining blocks, if any
+copy_bwd_block:        
+        lda ptr_tmp+1           // the size is the number of full blocks
+        beq copy_bwd_done       // no more blocks, means no more to copy
+
+        // change src and dest to previous blocks
+        dec ptr1+1
+        dec ptr3+1
+        // copy entire block backwards
+        ldy #$ff
+!:      lda (ptr1),y
+        sta (ptr3),y
+        dey
+        cpy #$ff
+        bne !-  
+
+        // when done, decrement size - so it keeps track of remaining blocks
+        dec ptr_tmp+1
+        jmp copy_bwd_block
+copy_bwd_done:
         jmp mem_copy_done
 }
