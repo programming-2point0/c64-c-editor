@@ -702,7 +702,7 @@ edit_dupl_line: {
         lda #$ff
         sta ptr2
 
-        // current line and next line
+        // copy from current line into next line (ptr1->ptr3)
         lda mem_line
         sta ptr1
         clc
@@ -721,18 +721,18 @@ edit_dupl_line: {
         lda #$97        // skip last line, since that is for the border
         sta ptr2
 
-        // first: add D4 to base addresses
+        // first add D4 to base addresses (gives us D8xx from 04xx)
         lda scr_line+1
         clc
         adc #$d4
         sta ptr1+1
         sta ptr3+1
 
-        // then add line length +2
+        // then add one screen line length to dest
         lda scr_line
         sta ptr1
         clc
-        adc #LINE_LENGTH+2
+        adc #LINE_LENGTH+2      // screen lines are +2 including border
         sta ptr3
         lda ptr3+1
         adc #$00
@@ -742,13 +742,16 @@ edit_dupl_line: {
 }
 
 edit_remove_line: {
+        // remove the current line
+        // copy from the next line until end of last line into current line
+
         // TODO: Find end of last line, right now, just fake it as hardcoded
-        lda #$43
+        lda #$33
         sta ptr2+1
-        lda #$69
+        lda #$ff
         sta ptr2
 
- // current line and next line
+        // copy from next line into current line (ptr1->ptr3)
         lda mem_line
         sta ptr3
         clc
@@ -756,6 +759,31 @@ edit_remove_line: {
         sta ptr1
         lda mem_line+1
         sta ptr3+1
+        adc #$00
+        sta ptr1+1
+
+        jsr mem_copy
+
+        // also move colors (shift one line up)
+        lda #$db
+        sta ptr2+1
+        lda #$97        // skip last line, since that is for the border
+        sta ptr2
+
+        // first add D4 to base addresses (gives us D8xx from 04xx)
+        lda scr_line+1
+        clc
+        adc #$d4
+        sta ptr1+1
+        sta ptr3+1
+
+        // then add one screen line length to src (keep dest)
+        lda scr_line
+        sta ptr3
+        clc
+        adc #LINE_LENGTH+2
+        sta ptr1
+        lda ptr1+1
         adc #$00
         sta ptr1+1
 
