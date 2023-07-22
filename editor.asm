@@ -380,6 +380,8 @@ cursor_calc_mem: {
         lda #>MEM_BASE
         sta mem_line+1
 
+        // TODO: Improve this calculation to multiply rather than run through every Y-value
+
         ldy ypos
 nxline: dey
         beq thisline
@@ -752,7 +754,6 @@ newline_break:
         iny
         jmp !-
 newline_end:
-//        inc ypos
         lda #$01
         sta xpos
         inc lines_total
@@ -835,30 +836,63 @@ duplicate_colors:
         jmp mem_copy     
 }
 
-edit_remove_line: {
-        // remove the current line
-        // copy from the next line until end of last line into current line
-
-        // TODO: Find end of last line, right now, just fake it as hardcoded
-        lda #$33
+set_ptr2_to_end_of_last_line:
+        lda lines_total
+        cmp #$17
+        bcs calc_end_of_mem
+        lda #$17
+calc_end_of_mem:
+        tay
+        
+        // set end 
+        lda #>MEM_BASE
         sta ptr2+1
-        lda #$ff
+        lda #<MEM_BASE
         sta ptr2
+        
+        // add Y * LINE_LENGTH to ptr2
+!:      lda ptr2
+        clc
+        adc #LINE_LENGTH
+        sta ptr2
+        lda ptr2+1
+        adc #$00
+        sta ptr2+1
+        dey
+        bne !-
+        rts
 
-        // copy from next line into current line (ptr1->ptr3)
+edit_remove_line: {
+        // remove the current line (mem_line)
+        // if this is the last line, then just fill with spaces
+        // else copy from next line to last line into this
+        lda ypos
+        cmp lines_total
+        beq last_line
+
+        // copy from the next line until end of last line into current line
+        // set start (ptr1) to next line (mem_line + LINE_LENGTH)
         lda mem_line
-        sta ptr3
         clc
         adc #LINE_LENGTH
         sta ptr1
         lda mem_line+1
-        sta ptr3+1
         adc #$00
         sta ptr1+1
+
+        // set end (ptr2) to end of last line
+        jsr set_ptr2_to_end_of_last_line
+
+        // set destination (ptr3) to this line (mem_line)
+        lda mem_line
+        sta ptr3
+        lda mem_line+1
+        sta ptr3+1
 
         jsr mem_copy
 
         // also move colors (shift one line up)
+        // TODO: Put in own sub-routine
         lda #$db
         sta ptr2+1
         lda #$97        // skip last line, since that is for the border
@@ -882,6 +916,17 @@ edit_remove_line: {
         sta ptr1+1
 
         jmp mem_copy
+        
+last_line:
+        // don't move anything in memory, just make sure that this line is cleared
+        ldy #$00
+        lda #SPACE
+!:      sta (mem_line),y
+        iny
+        cpy #LINE_LENGTH
+        bne !-
+        rts
+
 }
 
 edit_endofline: {
@@ -1003,6 +1048,7 @@ delete_line:
         sta mem_line+1
 delete_line_in_mem:        
         jsr edit_remove_line
+        dec lines_total
         jmp joinline_end
 }
 
