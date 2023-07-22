@@ -24,12 +24,15 @@ BasicUpstart2(Entry)
         st_cursor:      .word 0
         scr_cursor:     .word 0
         scr_line:       .word 0
-        mem_cursor:     .word 0
-        mem_line:       .word 0
-        color_mode:     .byte 0
-        color_start:    .byte 0
-        color_end:      .byte 0        
-}       // current 13 - max 16 bytes
+        mem_cursor:     .word 0 // f0-1
+        mem_line:       .word 0 // f2-3
+        lines_total:    .byte 0 // f4
+        KEYTAB:         .word 0 // CANNOT BE USED!!! f5 and f6 are used by the KERNALs SCNKEY routine
+        lines_offset:   .byte 0 // f7
+        color_mode:     .byte 0 // f8
+        color_start:    .byte 0 // f9
+        color_end:      .byte 0 // fa
+}
 
        
         * = $0820 "Program"
@@ -57,6 +60,10 @@ Entry:  // blue background color
 
         // initialize memory
         jsr mem_init
+        lda #$01
+        sta lines_total
+        lda #$00
+        sta lines_offset
 
         // show memory on screen
         jsr mem_show
@@ -194,15 +201,20 @@ db_cl:  sta (mem_line),y
         jmp nxtchar
 
 key_f4_long:
-        // clear screen
-        lda #SPACE
-        ldy #$00
-clsr:   sta $3000,y
-        sta $3100,y
-        sta $3200,y
-        sta $3300,y
+        // create lines with numbers and alphabet
+
+        ldy #$30
+f4_lines:
+        tya
+        pha
+        jsr printchar
+        jsr edit_newline
+        pla
+        tay
         iny
-        bne clsr
+        cpy #$50
+        bne f4_lines
+
         jsr mem_show
         jmp nxtchar
 
@@ -282,23 +294,42 @@ cursor_right:
         jmp cursor_down
 
 cursor_up:
-        // move cursor up - if at top of screen (and memory), don't move
+        // move cursor up - if at top of memory, don't move
+        lda ypos
+        cmp #$01
+        beq cursor_stay
+
         dec ypos
-        bne cursor_calculate       // not at top, done
-        lda #$01
-        sta ypos
+
+        // if cursor has moved up before offset, scroll_screen_down
+        lda ypos
+        sec
+        sbc lines_offset
+        cmp #$01
+        bne cursor_calculate
+        jsr scroll_screen_down
+
         jmp cursor_calculate
 
 cursor_down:
-        // move cursor down - if at end of screen, scroll ...
-        inc ypos
+        // move cursor down - until ypos meets lines_total
         lda ypos
+        cmp lines_total
+        beq cursor_stay
+
+        inc ypos            
+
+        // if cursor has left screen: scroll_screen_up                
+        lda ypos        
+        sec
+        sbc lines_offset
         cmp #$18
         bne cursor_calculate
-        // TODO: Handle scroll
-        lda #$17        // Don't do this, this just prevents scrolling down
-        sta ypos
-        jmp cursor_calculate    // NOTE, while technically not needed here, makes for better structure
+        jsr scroll_screen_up
+        
+        jmp cursor_calculate    // TODO: Maybe eliminate this ... NOTE, while technically not needed here, makes for better structure
+cursor_stay:
+        rts
 
 cursor_calculate:
         // use ypos and xpos to calculate screen and memory cursors
@@ -320,8 +351,10 @@ cursor_calc_scr:
         // calculate screen-cursors
         // scr_cursor - the exact address of the current position
         // scr_line   - the address of the current line (the border, +1 is the first character)
-        // first the line - ignoring xpos
+        // first the line - ignoring xpos, but subtracting possible offset
         lda ypos
+        sec
+        sbc lines_offset
         asl
         tay
         lda screen,y
@@ -388,6 +421,8 @@ show_cursor:
         sta $d000
 
         lda ypos
+        sec
+        sbc lines_offset
         asl
         asl
         asl
@@ -439,6 +474,26 @@ printchar:
         // TODO: Check if cursor is on new line - if so, then insert line
    
         rts
+
+// --------------------
+//  SCROLLING
+// --------------------
+
+scroll_screen_up:
+        // scroll the visible screen, just by changing the lines-offset and re-copying
+        inc lines_offset
+        jsr mem_show
+        rts
+
+scroll_screen_down:
+        lda lines_offset
+        cmp #$00
+        beq no_scroll
+        dec lines_offset
+        jsr mem_show
+no_scroll:        
+        rts
+
 
 // --------------------
 //  COLORING
@@ -697,9 +752,11 @@ newline_break:
         iny
         jmp !-
 newline_end:
-        inc ypos
+//        inc ypos
         lda #$01
         sta xpos
+        inc lines_total
+        jsr cursor_down
         rts       
 }
 
@@ -707,12 +764,31 @@ edit_dupl_line: {
         // add a new line in memory after current line
         // copy from current line until end of last line into next line
 
-        // TODO: Find end of last line, right now, just fake it as hardcoded
-        lda #$33
+        // find last line, or minimum line 17
+        lda lines_total
+        cmp #$17
+        bcs calc_end_of_mem
+        lda #$17
+calc_end_of_mem:
+        tay
+        
+        // set end 
+        lda #>MEM_BASE
         sta ptr2+1
-        lda #$ff
+        lda #<MEM_BASE
         sta ptr2
-
+        
+        // add Y * LINE_LENGTH to ptr2
+!:      lda ptr2
+        clc
+        adc #LINE_LENGTH
+        sta ptr2
+        lda ptr2+1
+        adc #$00
+        sta ptr2+1
+        dey
+        bne !-
+  
         // copy from current line into next line (ptr1->ptr3)
         lda mem_line
         sta ptr1
@@ -726,7 +802,14 @@ edit_dupl_line: {
 
         jsr mem_copy
 
-        // also duplicate colors
+        // duplicate colors, but only if ypos is on the visible screen!
+        lda ypos
+        sec
+        sbc lines_offset
+        cmp #$16
+        bcc duplicate_colors
+        rts
+duplicate_colors:        
         lda #$db
         sta ptr2+1
         lda #$97        // skip last line, since that is for the border
@@ -1131,13 +1214,29 @@ mem_show: {
         lda #$29
         sta ptr1
 
-        // TODO: use offset and enable scroll
+        // Set memory base
         lda #>MEM_BASE
         sta ptr2+1
         lda #<MEM_BASE
         sta ptr2
 
-        ldx #$17        // lines to copy
+        // add offset to base: base += offset * LINE_LENGTH
+        ldy lines_offset
+calc_offset:        
+        cpy #$00
+        beq cp_lines
+        dey
+        lda ptr2
+        clc
+        adc #LINE_LENGTH
+        sta ptr2
+        lda ptr2+1
+        adc #$00
+        sta ptr2+1
+        jmp calc_offset
+
+cp_lines:
+        ldx #$17        // lines to copy - always 23, no matter the offset and total lines
 pm_line:ldy #$00
 pm_chr: lda (ptr2),y
         sta (ptr1),y
