@@ -1,0 +1,22 @@
+#importonce 
+
+*=$e0 virtual
+.zp {
+        xpos:           .byte 0
+        ypos:           .byte 0
+        ptr1:           .word 0
+        ptr2:           .word 0
+        ptr3:           .word 0
+        ptr_tmp:        .word 0
+        st_cursor:      .word 0
+        scr_cursor:     .word 0
+        scr_line:       .word 0
+        mem_cursor:     .word 0 // f0-1
+        mem_line:       .word 0 // f2-3
+        lines_total:    .byte 0 // f4
+        KEYTAB:         .word 0 // CANNOT BE USED!!! f5 and f6 are used by the KERNALs SCNKEY routine
+        lines_offset:   .byte 0 // f7
+        color_mode:     .byte 0 // f8
+        color_start:    .byte 0 // f9
+        color_end:      .byte 0 // fa
+}
