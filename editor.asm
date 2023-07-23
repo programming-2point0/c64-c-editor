@@ -252,22 +252,27 @@ cursor_home: {
         // if already at top of screen, scroll to top of memory-text
         lda #$01
         cmp xpos
-        bne setxpos
+        bne home_xpos
+        clc
+        adc lines_offset
         cmp ypos
-        bne setypos
-        // TODO: scroll
-setypos:sta ypos       
-setxpos:sta xpos
-        jmp cursor_calculate
-}
+        bne home_ypos
+        // scroll to top of memory
+        lda #$00
+        sta lines_offset
+        jsr mem_show
 
-cursor_top:
-        // move cursor to top of screen (and beginning of that line)
-        // TODO: Handle scrolling - if screen isn't showing top of memory
+home_ypos:
+        lda #$01
+        clc
+        adc lines_offset
+        sta ypos
+
+home_xpos:
         lda #$01
         sta xpos
-        sta ypos
         jmp cursor_calculate
+}
 
 cursor_left: {
         // move cursor to the left - if already at beginning of line, move to end of previous line
@@ -305,7 +310,7 @@ cursor_up:
         lda ypos
         sec
         sbc lines_offset
-        cmp #$01
+        cmp #$00
         bne cursor_calculate
         jsr scroll_screen_down
 
