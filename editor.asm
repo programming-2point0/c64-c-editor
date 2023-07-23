@@ -761,7 +761,6 @@ newline_break:
 newline_end:
         lda #$01
         sta xpos
-        inc lines_total
         jsr cursor_down
         rts       
 }
@@ -770,43 +769,26 @@ edit_dupl_line: {
         // add a new line in memory after current line
         // copy from current line until end of last line into next line
 
-        // find last line, or minimum line 17
-        lda lines_total
-        cmp #$17
-        bcs calc_end_of_mem
-        lda #$17
-calc_end_of_mem:
-        tay
-        
-        // set end 
-        lda #>MEM_BASE
-        sta ptr2+1
-        lda #<MEM_BASE
-        sta ptr2
-        
-        // add Y * LINE_LENGTH to ptr2
-!:      lda ptr2
-        clc
-        adc #LINE_LENGTH
-        sta ptr2
-        lda ptr2+1
-        adc #$00
-        sta ptr2+1
-        dey
-        bne !-
-  
-        // copy from current line into next line (ptr1->ptr3)
+        // set start (ptr1) to this line (mem_line)
         lda mem_line
         sta ptr1
+        lda mem_line+1
+        sta ptr1+1
+
+        // set end (ptr2) to end of last line
+        jsr set_ptr2_to_end_of_last_line
+  
+        // set destination (ptr3) to next line (mem_line + LINE_LENGTH)
+        lda mem_line
         clc
         adc #LINE_LENGTH
         sta ptr3
         lda mem_line+1
-        sta ptr1+1
         adc #$00
         sta ptr3+1
 
         jsr mem_copy
+        inc lines_total         // increase total number of lines
 
         // duplicate colors, but only if ypos is on the visible screen!
         lda ypos
@@ -816,6 +798,7 @@ calc_end_of_mem:
         bcc duplicate_colors
         rts
 duplicate_colors:        
+// TODO: Put in own sub-routine
         lda #$db
         sta ptr2+1
         lda #$97        // skip last line, since that is for the border
@@ -847,7 +830,7 @@ set_ptr2_to_end_of_last_line:
         bcs calc_end_of_mem
         lda #$17
 calc_end_of_mem:
-        tay
+        tax     // put lines_total in X
         
         // set end 
         lda #>MEM_BASE
@@ -855,7 +838,7 @@ calc_end_of_mem:
         lda #<MEM_BASE
         sta ptr2
         
-        // add Y * LINE_LENGTH to ptr2
+        // add X (lines_total) * LINE_LENGTH to ptr2
 !:      lda ptr2
         clc
         adc #LINE_LENGTH
@@ -863,7 +846,7 @@ calc_end_of_mem:
         lda ptr2+1
         adc #$00
         sta ptr2+1
-        dey
+        dex
         bne !-
         rts
 
@@ -895,6 +878,7 @@ edit_remove_line: {
         sta ptr3+1
 
         jsr mem_copy
+        dec lines_total         // decrement the total number of lines
 
         // also move colors (shift one line up)
         // TODO: Put in own sub-routine
@@ -930,6 +914,9 @@ last_line:
         iny
         cpy #LINE_LENGTH
         bne !-
+
+        // but still decrement the total number of lines
+        dec lines_total         
         rts
 
 }
@@ -1053,7 +1040,7 @@ delete_line:
         sta mem_line+1
 delete_line_in_mem:        
         jsr edit_remove_line
-        dec lines_total
+     
         jmp joinline_end
 }
 
