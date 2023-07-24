@@ -205,18 +205,19 @@ db_cl:  sta (mem_line),y
         jmp nxtchar
 
 key_f4_long:
-        // create lines with numbers and alphabet
-
-        ldy #$30
+        // create lines with symbols, numbers and alphabet
+        ldy #$21
 f4_lines:
         tya
         pha
+        jsr return
+        pla
+        pha
         jsr printchar
-        jsr EDIT.newline
         pla
         tay
         iny
-        cpy #$51
+        cpy #$5b
         bne f4_lines
 
         jsr mem_show
