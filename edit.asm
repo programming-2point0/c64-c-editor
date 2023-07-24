@@ -248,6 +248,14 @@ delete_line: {
 
         // get the length of that line
         jsr get_line_length
+        // if previous line is LINE_LENGTH, ie a full line, we can't delete anything
+        cmp #LINE_LENGTH
+        bne go_ahead
+        // so just cancel without doing anything ... 
+        // we have destroyed mem_line, but ypos is okay, so a cursor_calculate should fix it
+        rts
+
+go_ahead:
         sta $02
 
         // also store the pointer in ptr1
