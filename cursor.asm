@@ -59,7 +59,7 @@ cursor_left: {
         cmp ypos
         beq stay        // if at very first line, ignore moving up, 
         jsr cursor_up
-        jsr edit_endofline // Move to last character, rather than just end-pos
+        jsr EDIT.get_line_length // Move to last character, rather than just end-pos
 stay:   sta xpos
         inc xpos
         jmp cursor_calculate

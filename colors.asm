@@ -164,3 +164,66 @@ color_keywords:
         .text "sizeof"
         .byte 0, 0
 }
+
+copy_colors_one_line_up:
+        // Copy colors from next line (scr_line + LINE_LENGTH+2) until end of screen into this line
+        // set destination (ptr3) to current_line (add $d400 to get into color-space)
+        lda scr_line
+        sta ptr3    
+        lda scr_line+1
+        clc
+        adc #$d4
+        sta ptr3+1
+
+        // set start (ptr1) to next line (ptr3 + LINE_LENGTH+2)
+        lda ptr3
+        clc
+        adc #LINE_LENGTH+2
+        sta ptr1
+        lda ptr3+1
+        adc #$00
+        sta ptr1+1
+
+        // set end (ptr2) to last line of text
+        lda #$db
+        sta ptr2+1
+        lda #$bf        // skip last line, since that is for the border
+        sta ptr2
+
+        jsr mem_copy
+        // NB: Now the last line on screen will have wrong colors!
+        
+        rts
+        
+        
+        
+
+
+copy_colors_one_line_down:
+        // Copy colors from current line (scr_line) until end of screen, to next line (scr_line + LINE_LENGTH)
+        // set start (ptr1) to current line (add $d400 to get into color-space)
+        lda scr_line
+        sta ptr1
+        lda scr_line+1
+        clc
+        adc #$d4
+        sta ptr1+1
+
+        // set end (ptr2) to end of secondlast text-line on screen ($db98 is the last textline)
+        lda #$db
+        sta ptr2+1
+        lda #$97        // skip last two lines, since that is for the border
+        sta ptr2
+
+        // set destination (ptr3) to next line (ptr1+LINE_LENGTH)
+        // first add D4 to base addresses (gives us D8xx from 04xx)
+        lda ptr1        
+        clc
+        adc #LINE_LENGTH+2      // (+2 because we include the border)
+        sta ptr3
+        lda ptr1+1
+        adc #$00
+        sta ptr3+1
+        
+        jsr mem_copy
+        rts

@@ -4,11 +4,14 @@
 
 #import "memory.asm"
 #import "cursor.asm"
+#import "colors.asm"
+
 
 // ------------------
 //  EDITING 
 //    - all editing routines only edit memory, not screen!  
 // ------------------
+EDIT: {
 
 edit_newline: {
         // inserts a new-line below this one - breaks the current line at current xpos if needed
@@ -36,12 +39,7 @@ only_spaces:
 
 at_beginning:
         // clear current line (insert empty line before)
-        ldy #$00
-        lda #SPACE
-!:      sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH
-        bne !-
+        jsr edit_clear_line
         jmp newline_end
 
 not_at_beginning:
@@ -50,17 +48,12 @@ not_at_beginning:
         // - else, break the line at cursor position
 
         // find end of current (original) line
-        jsr edit_endofline      
+        jsr get_line_length      
         cmp xpos        
         bpl newline_break       // line ends after xpos
 
         // insert new line AFTER this (by clearing the duplicate)
-        ldy #LINE_LENGTH
-        lda #SPACE
-!:      sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH*2
-        bne !-
+        jsr edit_clear_nextline
         jmp newline_end      
 
 newline_break:
@@ -101,6 +94,36 @@ newline_end:
         rts       
 }
 
+edit_clear_line:
+        // clears the current mem_line (fills with spaces)
+        ldy #$00
+        lda #SPACE
+!:      sta (mem_line),y
+        iny
+        cpy #LINE_LENGTH
+        bne !-
+        rts
+
+edit_clear_nextline:
+        ldy #LINE_LENGTH
+        lda #SPACE
+!:      sta (mem_line),y
+        iny
+        cpy #LINE_LENGTH*2
+        bne !-
+        rts
+
+clear_lastline:
+        // clears the last line in the text after a shift up
+        // abuses the fact that ptr3 points to the beginning of the last line
+        ldy #$00
+        lda #SPACE
+!:      sta (ptr3),y
+        iny
+        cpy #LINE_LENGTH
+        bne !-
+        rts
+
 edit_dupl_line: {
         // add a new line in memory after current line
         // copy from current line until end of last line into next line
@@ -131,33 +154,10 @@ edit_dupl_line: {
         sec
         sbc lines_offset
         cmp #$16
-        bcc duplicate_colors
+        bcs dont_duplicate_colors
+//        jsr copy_colors_one_line_down
+dont_duplicate_colors:        
         rts
-duplicate_colors:        
-// TODO: Put in own sub-routine
-        lda #$db
-        sta ptr2+1
-        lda #$97        // skip last line, since that is for the border
-        sta ptr2
-
-        // first add D4 to base addresses (gives us D8xx from 04xx)
-        lda scr_line+1
-        clc
-        adc #$d4
-        sta ptr1+1
-        sta ptr3+1
-
-        // then add one screen line length to dest
-        lda scr_line
-        sta ptr1
-        clc
-        adc #LINE_LENGTH+2      // screen lines are +2 including border
-        sta ptr3
-        lda ptr3+1
-        adc #$00
-        sta ptr3+1
-        
-        jmp mem_copy     
 }
 
 set_ptr2_to_end_of_last_line:
@@ -186,78 +186,7 @@ calc_end_of_mem:
         bne !-
         rts
 
-edit_remove_line: {
-        // remove the current line (mem_line)
-        // if this is the last line, then just fill with spaces
-        // else copy from next line to last line into this
-        lda ypos
-        cmp lines_total
-        beq last_line
-
-        // copy from the next line until end of last line into current line
-        // set start (ptr1) to next line (mem_line + LINE_LENGTH)
-        lda mem_line
-        clc
-        adc #LINE_LENGTH
-        sta ptr1
-        lda mem_line+1
-        adc #$00
-        sta ptr1+1
-
-        // set end (ptr2) to end of last line
-        jsr set_ptr2_to_end_of_last_line
-
-        // set destination (ptr3) to this line (mem_line)
-        lda mem_line
-        sta ptr3
-        lda mem_line+1
-        sta ptr3+1
-
-        jsr mem_copy
-        dec lines_total         // decrement the total number of lines
-
-        // also move colors (shift one line up)
-        // TODO: Put in own sub-routine
-        lda #$db
-        sta ptr2+1
-        lda #$97        // skip last line, since that is for the border
-        sta ptr2
-
-        // first add D4 to base addresses (gives us D8xx from 04xx)
-        lda scr_line+1
-        clc
-        adc #$d4
-        sta ptr1+1
-        sta ptr3+1
-
-        // then add one screen line length to src (keep dest)
-        lda scr_line
-        sta ptr3
-        clc
-        adc #LINE_LENGTH+2
-        sta ptr1
-        lda ptr1+1
-        adc #$00
-        sta ptr1+1
-
-        jmp mem_copy
-        
-last_line:
-        // don't move anything in memory, just make sure that this line is cleared
-        ldy #$00
-        lda #SPACE
-!:      sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH
-        bne !-
-
-        // but still decrement the total number of lines
-        dec lines_total         
-        rts
-
-}
-
-edit_endofline: {
+get_line_length: {
         // find the end of the current line - returns the position in A
         sty $04         // save Y
         ldy #LINE_LENGTH
@@ -274,116 +203,185 @@ end_found:
         rts        
 }
 
-edit_delete_char: {
-        // if at first xpos, join this and previous line
-        // else - move remaining characters (until last) one to the left
+delete: {
+        // Deletes a single character - or if at the beginning of a line, deletes the "newline", ie joins this line with the previous
         lda xpos
         cmp #$01
-        beq edit_joinlines
-
-        // find last character
-        tay             // store xpos in y
-        dey             // offset in memory
-        jsr edit_endofline
-        sta $02
-
-        // if we are beyond the last character, skip shifting
-        cpy $02
-        bcs clr_last
-
-shift_left:        
-        lda (mem_line),y
-        dey
-        sta (mem_line),y
-        iny
-        iny
-        cpy $02
-        bne shift_left
-        
-clr_last:
-        // put a space over the last position
-        lda #SPACE
-        dey
-        sta (mem_line),y
-        dec xpos
+        bne delete_character
+        lda ypos
+        cmp #$01
+        bne delete_line
+        // at top of memory-text - nothing to delete here
         rts
 }
 
-edit_joinlines: {
-        // find end of this line
-        jsr edit_endofline      
-        cmp #$00        // if empty line - just delete the entire line
-        beq delete_line_in_mem
-        sta $02         // remember the end for later
+delete_character: {
+        // deletes a single character somewhere on a line
+        // - shift every character after XPOS one character to the left, until end of line (LINE_LENGTH)
+        ldy xpos
+        dey
+!:      lda (mem_line),y
+        dey
+        sta (mem_line),y
+        iny
+        iny
+        cpy #LINE_LENGTH
+        bne !-
+        dey
+        // - add a new space as the last character on the line
+        lda #SPACE
+        sta (mem_line),y
 
-        // find previous line (keep this one in ptr_tmp)
+        // move xpos to cover the deleted character
+        dec xpos
+
+        rts
+}
+
+delete_line: {
+        // deleting a line means joining this line (mem_line) with the previous
+        // if the resulting joined line is longer than a single line, the rest of the second line (this line) is overwritten with spaces
+        // else, the remaining lines are shifted up, effectively removing this line
+
+        // get the length of this line
+        jsr get_line_length
+        sta $03
+
+        // store pointer to this line in ptr2
         lda mem_line
-        sta ptr_tmp;
+        sta ptr2
+        lda mem_line+1
+        sta ptr2+1
+
+        // find previous line
+        lda mem_line
         sec
         sbc #LINE_LENGTH
         sta mem_line
         lda mem_line+1
-        sta ptr_tmp+1
         sbc #$00
         sta mem_line+1
 
-        // find end of previous line - set mem_cursor to that pos, and remember in xpos
-        jsr edit_endofline
-        // if end of previous line is the line-length - nothing can be joined into it
-        cmp #LINE_LENGTH
-        bne joinline_go
-        rts
-joinline_go:        
+        // get the length of that line
+        jsr get_line_length
+        sta $02
+
+        // also store the pointer in ptr1
+        lda mem_line
+        sta ptr1
+        lda mem_line+1
+        sta ptr1+1
+
+        // now join the two lines
+        // - first add the length of line 1 to ptr1
+        lda ptr1
+        clc
+        adc $02
+        sta ptr1
+        lda ptr1+1
+        adc #$00
+        sta ptr1+1
+
+        // - then copy from beginning of line 2 to end of line 1 - until the end of line 2
+        ldy #$00
+!:      cpy $03         // Y could be 0 from the beginning, so maybe skip
+        beq done_copy
+        lda (ptr2),y
+        sta (ptr1),y
+        iny
+        jmp !-
+
+done_copy:
+
+        // set new xpos to the joining of the two lines
+        lda $02
         sta xpos
         inc xpos
-        tax
+        // move ypos one line up
+        dec ypos
+
+        // calculate the total length of the new line
+        lda $02
         clc
-        adc mem_line
-        sta mem_cursor
+        adc $03
+        // if it is shorter than LINE_LENGTH, shift lines up
+        cmp #LINE_LENGTH+1
+        bcs keep_both_lines
+        
+        jsr shift_lines_up
+        jsr clear_lastline
+        dec lines_total
+        rts
+
+keep_both_lines:
+        // clear the remaining of line1, that now spans two LINE_LENGTHs
+        // Calculate the total characters to "erase" - total is LINE_LENGTH * 2
+        // but with an offset of length of line 1 (in $02)
+        lda #LINE_LENGTH*2
+        sec
+        sbc $02
+        sta $02         // overwrite length, don't think we need it anymore
+        
+        lda #$20
+!:      sta (ptr1),y
+        iny
+        cpy $02
+        bne !-        
+        
+        rts
+}
+
+shift_lines_up: {
+        // move all lines after this, actually after next, one line up
+        // mem_line is expected to be the line to keep - the next line is overwritten with the next again
+        // ptr1 (start) = next-next line
+        // ptr2 (end) = end of last line
+        // ptr3 (destination) = next line
+        lda mem_line
+        clc
+        adc #LINE_LENGTH
+        sta ptr3
         lda mem_line+1
         adc #$00
-        sta mem_cursor+1
+        sta ptr3+1
 
-        // copy from beginning of this line to end of previous 
+        lda ptr3
+        clc
+        adc #LINE_LENGTH
+        sta ptr1
+        lda ptr3+1
+        adc #$00
+        sta ptr1+1
+
+        jsr set_ptr2_to_end_of_last_line
+
+        // if last line (ptr2) is somehow before start (ptr1) (can happen if we are deleting the very last line)
+        // - then don't copy, but clear the line starting at start
+        lda ptr1+1
+        cmp ptr2+1
+        bcc go_copy
+        lda ptr1
+        cmp ptr2
+        bcc go_copy
+
+        // don't copy, but clear line
         ldy #$00
-!:      lda (ptr_tmp),y
-        sta (mem_cursor),y
-        inx                     // count total characters 
+        lda #$81        // TODO: MAKE SPACE
+!:      sta (ptr1),y
         iny
-        cpy $02                 // check if we have reached the end of the original line
+        cpy #LINE_LENGTH
         bne !-
-
-        // if total is less than LINE_LENGTH delete this line
-        // else, fill remaining with spaces
-        cpx #LINE_LENGTH
-        bcc delete_line
-        beq delete_line
-        // fill remaining line with spaces
-        lda #SPACE
-!:      sta (mem_cursor),y
-        iny
-        inx
-        cpx #$4c        // Two lines
-        bne !-
-joinline_end:
-        jmp cursor_up        
-
-delete_line:
-        // delete the line currently in tmp (by copying tmp to mem)
-        lda ptr_tmp
-        sta mem_line
-        lda ptr_tmp+1
-        sta mem_line+1
-delete_line_in_mem:        
-        jsr edit_remove_line
-     
-        jmp joinline_end
+        rts
+go_copy:
+        jsr mem_copy
+        rts
 }
+
 
 edit_insert_char: {
         // inserts an empty space at xpos - shifts remainder of line to the right
         // find end of the line
-        jsr edit_endofline
+        jsr get_line_length
         cmp xpos
         bpl insert_and_shift
         // if nothing is after cursor, ignore
@@ -416,4 +414,5 @@ shift:
         sta (mem_line),y
         
         rts        
+}
 }

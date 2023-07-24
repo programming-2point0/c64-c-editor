@@ -2,15 +2,15 @@
 
 *=$e0 virtual
 .zp {
-        xpos:           .byte 0
-        ypos:           .byte 0
-        ptr1:           .word 0
-        ptr2:           .word 0
-        ptr3:           .word 0
-        ptr_tmp:        .word 0
-        st_cursor:      .word 0
-        scr_cursor:     .word 0
-        scr_line:       .word 0
+        xpos:           .byte 0 // e0
+        ypos:           .byte 0 // e1
+        ptr1:           .word 0 // e2-e3
+        ptr2:           .word 0 // e4-e5
+        ptr3:           .word 0 // e6-e7
+        ptr_tmp:        .word 0 // e8-e9
+        st_cursor:      .word 0 // ea-eb
+        scr_cursor:     .word 0 // ec-ed
+        scr_line:       .word 0 // ee-ef
         mem_cursor:     .word 0 // f0-1
         mem_line:       .word 0 // f2-3
         lines_total:    .byte 0 // f4

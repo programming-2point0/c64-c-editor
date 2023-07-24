@@ -125,21 +125,32 @@ key_crsr_down:
         jmp nxtchar
 
 key_return:
-        jsr edit_newline
+        jsr EDIT.edit_newline
         jsr cursor_calculate
         jsr color_line
         jsr mem_show
         jmp nxtchar
 
 key_delete:
-        jsr edit_delete_char
+        jsr EDIT.delete
+        // Cursor might have moved above screen, 
+        // if so, scroll before recoloring
+        lda ypos
+        cmp lines_offset
+        bne !no_scroll+
+        // scroll three lines to help user understand that we scroll
+        jsr scroll_screen_down
+        jsr scroll_screen_down
+        jsr scroll_screen_down
+        
+!no_scroll:        
         jsr cursor_calculate
         jsr color_line
         jsr mem_show
         jmp nxtchar
 
 key_insert:
-        jsr edit_insert_char
+        jsr EDIT.edit_insert_char
         jsr color_line
         jsr mem_show
         jmp nxtchar
@@ -180,11 +191,11 @@ f4_lines:
         tya
         pha
         jsr printchar
-        jsr edit_newline
+        jsr EDIT.edit_newline
         pla
         tay
         iny
-        cpy #$50
+        cpy #$51
         bne f4_lines
 
         jsr mem_show
