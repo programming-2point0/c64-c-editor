@@ -63,6 +63,7 @@ newline: {
         sta insert_line_y
 
         jsr shift_lines_down
+        jsr copy_colors_one_line_down
 
         // length of first line is xpos
         // length of second line is (endofline / line_length) - xpos
@@ -155,6 +156,7 @@ insert_and_shift:
         // store this line as the last time we inserted a new line
         sta insert_line_y
         jsr shift_lines_down
+        jsr copy_colors_one_line_down
         inc lines_total
         tya
         tax                     // store Y in X
@@ -301,6 +303,7 @@ done_copy:
         jsr shift_lines_up
         jsr clear_lastline
         dec lines_total
+        jsr copy_colors_one_line_up
         rts
 
 keep_both_lines:

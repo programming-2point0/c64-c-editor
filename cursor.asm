@@ -39,6 +39,8 @@ cursor_home: {
         sta lines_offset
         jsr mem_show
 
+        jsr color_screen
+
 home_ypos:
         lda #$01
         clc

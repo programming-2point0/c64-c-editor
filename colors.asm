@@ -11,8 +11,112 @@
 //    GREEN  - letters (not in keywords)
 //    GREY   - numbers
 
+color_screen: {
+        // colorizes the visible screen, by calling color_line for each line
+
+        // store original cursor
+        lda xpos
+        sta $03
+        lda ypos
+        sta $04
+
+        // set ypos to home = lines_offset+1
+        lda #$01
+        clc
+        adc lines_offset
+        sta ypos
+
+        // calculate cursors
+        jsr cursor_calculate
+
+        lda #$17        // number of lines to colorize
+        sta $02
+color_next_line:        
+        jsr color_line
+        dec $02
+        beq done_coloring
+
+        // next line - screen
+        lda scr_line
+        clc
+        adc #LINE_LENGTH+2
+        sta scr_line
+        lda scr_line+1
+        adc #$00
+        sta scr_line+1
+        // and next line - memory
+        lda mem_line
+        clc
+        adc #LINE_LENGTH
+        sta mem_line
+        lda mem_line+1
+        adc #$00
+        sta mem_line+1
+
+        jmp color_next_line
+
+done_coloring:
+        // restore cursor
+        lda $03
+        sta xpos
+        lda $04
+        sta ypos
+        rts
+
+}
+
+color_first_line: {
+        // store original cursor
+        lda xpos
+        sta $03
+        lda ypos
+        sta $04
+
+        lda #$01
+        clc
+        adc lines_offset
+        sta ypos
+
+        jsr cursor_calculate
+        jsr color_line
+
+        // restore cursor
+        lda $03
+        sta xpos
+        lda $04
+        sta ypos
+        rts
+}
+
+color_last_line: {
+        // store original cursor
+        lda xpos
+        sta $03
+        lda ypos
+        sta $04
+
+        lda #$17
+        clc
+        adc lines_offset
+        sta ypos
+
+        jsr cursor_calculate
+        jsr color_line
+
+        // restore cursor
+        lda $03
+        sta xpos
+        lda $04
+        sta ypos
+        rts
+}
+
 color_line: {
         // colorizes the current line, according to syntax highlighting
+        // uses scr_line to find color-address
+        // uses mem_line to find text
+        // uses ptr_tmp to store color-addresses
+
         lda scr_line    // use the screen-line, as the mem-line might be offset
         clc
         adc #$01
@@ -46,6 +150,8 @@ colorize:
     // TODO: handle string-mode as well
 
 color_lettermode:           
+        // TODO: Also accept numbers when in letter-mode - a number can't start a lettermode, but it also can't stop it!
+        
         // check if actually letter
         cmp #$1b
         bmi accept_letter
