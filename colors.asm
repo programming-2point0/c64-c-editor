@@ -10,6 +10,8 @@
 //    YELLOW - symbols, eg ()*&[]{}
 //    GREEN  - letters (not in keywords)
 //    GREY   - numbers
+//    RED    - strings
+//    light-blue - comments
 
 color_screen: {
         // colorizes the visible screen, by calling color_line for each line
@@ -134,7 +136,8 @@ color_line: {
         01 is letter_mode
 
         in char_mode, symbols and numbers are colored.
-        if a letter is seen, the mode switches to letter_mode until a non-letter is seen
+        if a letter is seen, the mode switches to letter_mode until a non-letter is seen 
+        (except numbers are accepted as letters when following a letter)
         when letter_mode ends, the letters, the word, is compared to a list of keywords, and 
         if it matches any of them, the word is colored WHITE - otherwise GREEN.
 
@@ -150,15 +153,20 @@ colorize:
     // TODO: handle string-mode as well
 
 color_lettermode:           
-        // TODO: Also accept numbers when in letter-mode - a number can't start a lettermode, but it also can't stop it!
+        // In letter-mode - a-z A-Z and 0-9 are accepted as letters - most others aren't
         
-        // check if actually letter
-        cmp #$1b
+        // check if acceptable letter
+        cmp #$1b                // < 27 a-z
         bmi accept_letter
-        cmp #$5a
-        bpl letter_mode_end
-        cmp #$40
+        cmp #$30                // < 48 symbols
         bmi letter_mode_end
+        cmp #$3a                // < 57 digits - allowed in letter mode
+        bmi accept_letter
+        cmp #$40                // 64 - 90 A-Z
+        bmi letter_mode_end
+        cmp #$5b                // > 91 arent letters anymore
+        bpl letter_mode_end
+
 accept_letter:
         // keep accepting letters - don't do anything with them yet
         jmp color_next_char
