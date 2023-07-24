@@ -19,4 +19,5 @@
         color_mode:     .byte 0 // f8
         color_start:    .byte 0 // f9
         color_end:      .byte 0 // fa
+        insert_line_y:  .byte 0 // fb   - remembers the last line used for inserts (so it can shift to the next line)
 }

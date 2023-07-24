@@ -12,72 +12,6 @@
 //    - all editing routines only edit memory, not screen!  
 // ------------------
 EDIT: {
-/*
-edit_clear_line:
-        // clears the current mem_line (fills with spaces)
-        ldy #$00
-        lda #SPACE
-!:      sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH
-        bne !-
-        rts
-
-edit_clear_nextline:
-        ldy #LINE_LENGTH
-        lda #SPACE
-!:      sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH*2
-        bne !-
-        rts
-*/
-clear_lastline:
-        // clears the last line in the text after a shift up
-        // abuses the fact that ptr3 points to the beginning of the last line
-        ldy #$00
-        lda #SPACE
-!:      sta (ptr3),y
-        iny
-        cpy #LINE_LENGTH
-        bne !-
-        rts
-
-edit_dupl_line: {
-        // add a new line in memory after current line
-        // copy from current line until end of last line into next line
-
-        // set start (ptr1) to this line (mem_line)
-        lda mem_line
-        sta ptr1
-        lda mem_line+1
-        sta ptr1+1
-
-        // set end (ptr2) to end of last line
-        jsr set_ptr2_to_end_of_last_line
-  
-        // set destination (ptr3) to next line (mem_line + LINE_LENGTH)
-        lda mem_line
-        clc
-        adc #LINE_LENGTH
-        sta ptr3
-        lda mem_line+1
-        adc #$00
-        sta ptr3+1
-
-        jsr mem_copy
-        inc lines_total         // increase total number of lines
-
-        // duplicate colors, but only if ypos is on the visible screen!
-        lda ypos
-        sec
-        sbc lines_offset
-        cmp #$16
-        bcs dont_duplicate_colors
-//        jsr copy_colors_one_line_down
-dont_duplicate_colors:        
-        rts
-}
 
 set_ptr2_to_end_of_last_line: {
         lda lines_total
@@ -124,6 +58,10 @@ end_found:
 }
 
 newline: {
+        // reset insert state
+        lda #$00
+        sta insert_line_y
+
         jsr shift_lines_down
 
         // length of first line is xpos
@@ -187,6 +125,62 @@ done_clear:
         rts
 }
 
+insert: {
+        // inserts an empty space at xpos - shifts remainder of line to the right
+        // if line shifts beyond LINE_LENGTH, a new line is inserted below, and then shifts into that
+        // subsequent shifts keep shifting into the same new line, until inserting on another line
+
+        // find end of the line
+        jsr get_line_length
+        cmp xpos
+        bpl insert_and_shift
+        // if nothing is after cursor, ignore
+        rts
+insert_and_shift:
+        tay
+        // Check if A is LINE_LENGTH - that means we need a new (empty) line
+        cmp #LINE_LENGTH
+        bne shift
+
+        // we are shifting two lines, so add one line_length to y
+        clc
+        adc #LINE_LENGTH-1
+        tay
+
+        // check if we have already created a new line from this position
+        lda ypos
+        cmp insert_line_y
+        beq shift
+
+        // store this line as the last time we inserted a new line
+        sta insert_line_y
+        jsr shift_lines_down
+        inc lines_total
+        tya
+        tax                     // store Y in X
+        // clear the new line before using
+        ldy #LINE_LENGTH
+        lda #SPACE
+!:      sta (mem_line),y
+        iny
+        cpy #LINE_LENGTH*2
+        bne !-
+        txa
+        tay                     // restore Y from X
+shift:  
+        dey
+        lda (mem_line),y
+        iny
+        sta (mem_line),y
+        dey        
+        cpy xpos
+        bpl shift
+        lda #SPACE
+        sta (mem_line),y
+        
+        rts        
+}
+
 delete: {
         // Deletes a single character - or if at the beginning of a line, deletes the "newline", ie joins this line with the previous
         lda xpos
@@ -226,6 +220,10 @@ delete_line: {
         // deleting a line means joining this line (mem_line) with the previous
         // if the resulting joined line is longer than a single line, the rest of the second line (this line) is overwritten with spaces
         // else, the remaining lines are shifted up, effectively removing this line
+
+        // reset insert state
+        lda #$00
+        sta insert_line_y
 
         // get the length of this line
         jsr get_line_length
@@ -323,6 +321,18 @@ keep_both_lines:
         rts
 }
 
+clear_lastline: {
+        // clears the last line in the text after a shift up
+        // abuses the fact that ptr3 points to the beginning of the last line
+        ldy #$00
+        lda #SPACE
+!:      sta (ptr3),y
+        iny
+        cpy #LINE_LENGTH
+        bne !-
+        rts
+}
+
 shift_lines_up: {
         // move all lines after this, actually after next, one line up
         // mem_line is expected to be the line to keep - the next line is overwritten with the next again
@@ -395,41 +405,4 @@ shift_lines_down: {
         rts
 }
 
-edit_insert_char: {
-        // inserts an empty space at xpos - shifts remainder of line to the right
-        // find end of the line
-        jsr get_line_length
-        cmp xpos
-        bpl insert_and_shift
-        // if nothing is after cursor, ignore
-        rts
-insert_and_shift:
-        tay
-        // Check if A is LINE_LENGTH - that means we need a new (empty) line
-        cmp #LINE_LENGTH
-        bne shift
-        jsr edit_dupl_line
-        tya
-        tax                     // store Y in X
-        ldy #LINE_LENGTH
-        lda #SPACE
-!:      sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH*2
-        bne !-
-        txa
-        tay                     // restore Y from X
-shift:  
-        dey
-        lda (mem_line),y
-        iny
-        sta (mem_line),y
-        dey        
-        cpy xpos
-        bpl shift
-        lda #SPACE
-        sta (mem_line),y
-        
-        rts        
-}
 }

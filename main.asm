@@ -75,7 +75,8 @@ getkey: jsr GETIN
         beq key_delete          // aka backspace
         cmp #$94
         beq key_insert
-
+        cmp #$51
+        beq key_insert
 
         // Debugging tools for displaying memory, erasing line and entering complete line
         cmp #$85
@@ -137,7 +138,7 @@ key_insert:
         jmp nxtchar
 
 insert:
-        jsr EDIT.edit_insert_char
+        jsr EDIT.insert
         jsr color_line
         jsr mem_show
         rts
