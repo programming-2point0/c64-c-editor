@@ -157,27 +157,30 @@ cursor_calc_mem: {
         // calculate memory cursors
         // mem_cursor - the exact address of the current position
         // mem_line - the address of the current line (0 is the first character) 
+
+        // mem_line = mem_base + (ypos-1) * LINE_LENGTH
+        // mem_cursor = mem_line + xpos
+
+        ldy ypos        // store ypos temporarily in y
+        dec ypos
+
+        // Multiply ypos by LINE_LENGTH (destroys ypos along the way)
         lda #<MEM_BASE
-        sta mem_line
-        lda #>MEM_BASE
-        sta mem_line+1
-
-        // TODO: Improve this calculation to multiply rather than run through every Y-value
-
-        ldy ypos
-nxline: dey
-        beq thisline
-        // add one line-length, Y times, to address
-        lda mem_line
+        ldx #$08
+l1:     lsr ypos
+        bcc l2
         clc
         adc #LINE_LENGTH
-        sta mem_line
-        lda mem_line+1
-        adc #$00
+l2:     ror        
+        ror mem_line
+        dex
+        bne l1
+        clc
+        adc #>MEM_BASE
         sta mem_line+1
-        jmp nxline
 
-thisline:        
+        sty ypos        // restore ypos from y
+     
         // found line - now add xpos to cursor
         ldx xpos
         dex
