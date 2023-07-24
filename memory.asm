@@ -114,14 +114,15 @@ mem_copy: {
         txa
         pha
 
-        // if begin and end are the same - don't copy anything
-        // TODO: Also eject if ptr2 < ptr1??
-        lda ptr1
-        cmp ptr2
-        bne different
+        // if ptr1 >= ptr2, then eject, don't copy
         lda ptr1+1
         cmp ptr2+1
-        bne different
+        bcc different
+
+        lda ptr1
+        cmp ptr2
+        bcc different
+
         jmp mem_copy_done
 
 different:
