@@ -1,13 +1,13 @@
 BasicUpstart2(Entry)
 
 *=$2000 "Graphics"
-        .import binary "c-font.font"
+        .import c64 "c-font.font"
 
 #import "zeropage.asm"
 #import "constants.asm"
 
        
-        * = $0820 "Program"
+        * = $080d "Program"
 Entry:  // blue background color
         lda #$06
         sta $d020
@@ -30,6 +30,9 @@ Entry:  // blue background color
         // draw border
         jsr drawborder
 
+        // reset screen-colors
+        jsr resetcolors
+
         // initialize memory
         jsr mem_init
         lda #$01
@@ -48,14 +51,14 @@ Entry:  // blue background color
 getkey: jsr GETIN
         cmp #$00
         beq getkey
-
+/*
         ldx #$01
         ldy #$00
         jsr st_setpos
         pha
         jsr st_print_hex        // only for debugging
         pla
-
+*/
         cmp #$13
         beq key_crsr_home
 //        cmp #$93
@@ -74,8 +77,6 @@ getkey: jsr GETIN
         cmp #$14
         beq key_delete          // aka backspace
         cmp #$94
-        beq key_insert
-        cmp #$51
         beq key_insert
 
         // Debugging tools for displaying memory, erasing line and entering complete line
@@ -180,60 +181,18 @@ return:
         rts
 
 key_f1_long:
-        jsr mem_show
         jmp nxtchar
 
 key_f2_long:
-        // fill current line with letters and numbers
-        ldy #$00
-db_fl:  tya
-        sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH
-        bne db_fl
-        jsr mem_show
         jmp nxtchar
 
 key_f3_long:
-        // clear current line
-        ldy #$00
-        lda #SPACE
-db_cl:  sta (mem_line),y
-        iny
-        cpy #LINE_LENGTH
-        bne db_cl
-        jsr mem_show
         jmp nxtchar
 
 key_f4_long:
-        // create lines with symbols, numbers and alphabet
-        ldy #$21
-f4_lines:
-        tya
-        pha
-        jsr return
-        pla
-        pha
-        jsr printchar
-        pla
-        tay
-        iny
-        cpy #$5b
-        bne f4_lines
-
-        jsr mem_show
         jmp nxtchar
 
 key_f5_long:
-        // write a, b, c, d and so on
-        ldx #$41
-alfa:   txa
-        jsr printchar
-        jsr cursor_down
-        inx
-        lda ypos
-        cmp #$16
-        bne alfa
         jmp nxtchar
 
 drawborder: {
@@ -271,6 +230,18 @@ b_vert: lda screen,x
         sta $0427
         rts
 }       
+
+resetcolors:
+        lda #$0e
+        ldx #250
+!:      sta $d7ff,x
+        sta $d8f9,x
+        sta $d9f3,x
+        sta $daed,x
+        dex
+        bne !-
+        rts
+
 
 #import "cursor.asm"
 #import "printing.asm"
